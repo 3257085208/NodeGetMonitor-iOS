@@ -67,3 +67,21 @@ final class NodeGetCoreTests: XCTestCase {
         XCTAssertEqual(summary.gpuUsage, 5.0)
     }
 }
+
+extension NodeGetCoreTests {
+    func testAgentUUIDListResultDecoding() throws {
+        let json = """
+        {
+          "uuids": [
+            "e8583352-39e8-5a5b-b66c-e450689088fd",
+            "a1b2c3d4-5e6f-7a8b-9c0d-1e2f3a4b5c6d"
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let result = try JSONDecoder().decode(AgentUUIDListResult.self, from: json)
+
+        XCTAssertEqual(result.uuids.count, 2)
+        XCTAssertEqual(result.uuids.first, "e8583352-39e8-5a5b-b66c-e450689088fd")
+    }
+}

@@ -44,7 +44,7 @@ struct ContentView: View {
 
                 Section("当前版本") {
                     LabeledContent("App", value: "NodeGet Monitor")
-                    LabeledContent("Version", value: "0.2.0")
+                    LabeledContent("Version", value: "0.2.1")
                     Text("这一版加入服务器保存、Keychain Token 存储和真实 Agent UUID 列表。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)

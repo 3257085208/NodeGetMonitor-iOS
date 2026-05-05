@@ -36,7 +36,13 @@ public final class NodeGetClient {
             throw NodeGetClientError.httpStatus(httpResponse.statusCode)
         }
 
-        let decoded = try JSONDecoder().decode(JSONRPCResponse<Result>.self, from: data)
+        let decoded: JSONRPCResponse<Result>
+        do {
+            decoded = try JSONDecoder().decode(JSONRPCResponse<Result>.self, from: data)
+        } catch {
+            let raw = String(data: data, encoding: .utf8) ?? "<non-utf8 response>"
+            throw NodeGetClientError.decodingFailed(raw.prefixString(600))
+        }
 
         if let error = decoded.error {
             throw error
@@ -74,11 +80,13 @@ public final class NodeGetClient {
     }
 
     public func listAllAgentUUIDs(token: String) async throws -> [String] {
-        try await call(
+        let result: AgentUUIDListResult = try await call(
             method: "nodeget-server_list_all_agent_uuid",
             params: TokenParams(token: token),
-            resultType: [String].self
+            resultType: AgentUUIDListResult.self
         )
+
+        return result.uuids
     }
 
     public func latestDynamicSummaries(
@@ -95,6 +103,14 @@ public final class NodeGetClient {
             ),
             resultType: [AgentSummary].self
         )
+    }
+}
+
+public struct AgentUUIDListResult: Decodable, Equatable {
+    public let uuids: [String]
+
+    public init(uuids: [String]) {
+        self.uuids = uuids
     }
 }
 
@@ -122,6 +138,7 @@ public enum NodeGetClientError: Error, Equatable, LocalizedError {
     case invalidHTTPResponse
     case httpStatus(Int)
     case emptyResult
+    case decodingFailed(String)
 
     public var errorDescription: String? {
         switch self {
@@ -131,6 +148,15 @@ public enum NodeGetClientError: Error, Equatable, LocalizedError {
             return "HTTP status code: \(code)."
         case .emptyResult:
             return "The server returned an empty result."
+        case .decodingFailed(let raw):
+            return "Response decoding failed. Raw response: \(raw)"
         }
+    }
+}
+
+private extension StringProtocol {
+    func prefixString(_ maxLength: Int) -> String {
+        let truncated = self.prefix(maxLength)
+        return String(truncated)
     }
 }
