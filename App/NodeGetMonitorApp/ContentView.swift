@@ -21,7 +21,7 @@ struct ContentView: View {
                 .tabItem { Label("资产", systemImage: "creditcard") }
                 .tag(MainTab.assets)
 
-            ControlCenterView()
+            DashboardSuiteView()
                 .tabItem { Label("主控", systemImage: "server.rack") }
                 .tag(MainTab.control)
 
