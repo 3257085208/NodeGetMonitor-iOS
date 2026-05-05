@@ -1,0 +1,23 @@
+name: Swift Core Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Build core package
+        run: swift build
+
+      - name: Test core package
+        run: swift test
