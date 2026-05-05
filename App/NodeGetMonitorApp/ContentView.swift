@@ -1,17 +1,36 @@
 import SwiftUI
+import Foundation
 
-private enum HomeMenuSheet: String, Identifiable {
+private enum MainTab: Hashable {
+    case monitor
+    case assets
     case settings
-    case billing
-    case about
-    case privacy
-
-    var id: String { rawValue }
 }
 
 struct ContentView: View {
+    @State private var selectedTab: MainTab = .monitor
+
+    var body: some View {
+        TabView(selection: $selectedTab) {
+            MonitorRootView(openSettings: { selectedTab = .settings })
+                .tabItem { Label("监控", systemImage: "chart.line.uptrend.xyaxis") }
+                .tag(MainTab.monitor)
+
+            BillingOverviewView()
+                .tabItem { Label("资产", systemImage: "creditcard") }
+                .tag(MainTab.assets)
+
+            SettingsView()
+                .tabItem { Label("设置", systemImage: "gearshape") }
+                .tag(MainTab.settings)
+        }
+        .tint(Color.ngPrimary)
+    }
+}
+
+struct MonitorRootView: View {
     @EnvironmentObject private var serverStore: ServerProfileStore
-    @State private var activeSheet: HomeMenuSheet?
+    let openSettings: () -> Void
 
     var body: some View {
         NavigationStack {
@@ -19,7 +38,7 @@ struct ContentView: View {
                 AppBackgroundView()
 
                 if serverStore.servers.isEmpty {
-                    EmptyHomeView(openSettings: { activeSheet = .settings })
+                    EmptyHomeView(openSettings: openSettings)
                 } else {
                     MultiServerHomeDashboardView()
                         .environmentObject(serverStore)
@@ -27,39 +46,6 @@ struct ContentView: View {
             }
             .navigationTitle("NodeGet")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button { activeSheet = .settings } label: {
-                            Label("设置", systemImage: "gearshape")
-                        }
-                        Button { activeSheet = .billing } label: {
-                            Label("到期 / 续费", systemImage: "calendar.badge.clock")
-                        }
-                        Button { activeSheet = .about } label: {
-                            Label("关于", systemImage: "info.circle")
-                        }
-                        Button { activeSheet = .privacy } label: {
-                            Label("隐私", systemImage: "hand.raised")
-                        }
-                    } label: {
-                        Image(systemName: "line.3.horizontal")
-                            .font(.title3.weight(.bold))
-                    }
-                }
-            }
-            .sheet(item: $activeSheet) { sheet in
-                switch sheet {
-                case .settings:
-                    SettingsView().environmentObject(serverStore)
-                case .billing:
-                    BillingOverviewView().environmentObject(serverStore)
-                case .about:
-                    AboutView()
-                case .privacy:
-                    PrivacyView()
-                }
-            }
         }
     }
 }
@@ -287,7 +273,7 @@ struct EmptyHomeView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("还没有配置主控")
                         .font(.title2.bold())
-                    Text("点右上角菜单进入设置，添加 NodeGet Server 地址和 Token。配置完成后，首页会直接显示 Agent 列表。")
+                    Text("切到下方“设置”页，添加 NodeGet Server 地址和 Token。配置完成后，监控页会直接显示 Agent 列表。")
                         .font(.subheadline)
                         .foregroundStyle(Color.ngMuted)
                         .fixedSize(horizontal: false, vertical: true)
@@ -310,113 +296,248 @@ struct EmptyHomeView: View {
     }
 }
 
-struct SettingsView: View {
-    @EnvironmentObject private var serverStore: ServerProfileStore
-    @Environment(\.dismiss) private var dismiss
+enum BillingCurrency: String, CaseIterable, Identifiable {
+    case usd = "USD"
+    case eur = "EUR"
+    case gbp = "GBP"
+    case cny = "CNY"
 
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                AppBackgroundView()
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        Text("设置")
-                            .font(.system(size: 34, weight: .black, design: .rounded))
+    var id: String { rawValue }
 
-                        NavigationLink {
-                            AddServerView().environmentObject(serverStore)
-                        } label: {
-                            HomeActionCard(icon: "plus.circle.fill", title: "添加主控", subtitle: "配置 NodeGet Server 地址与 Token")
-                        }
-                        .buttonStyle(.plain)
+    var title: String {
+        switch self {
+        case .usd: return "USD ($)"
+        case .eur: return "EUR (€)"
+        case .gbp: return "GBP (£)"
+        case .cny: return "CNY (¥)"
+        }
+    }
 
-                        VStack(alignment: .leading, spacing: 12) {
-                            SectionCaption(text: "主控地址")
-                            if serverStore.servers.isEmpty {
-                                Text("暂无主控。")
-                                    .font(.subheadline)
-                                    .foregroundStyle(Color.ngMuted)
-                                    .padding(18)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .ngSoftCard()
-                            } else {
-                                ForEach(serverStore.servers) { server in
-                                    HStack(spacing: 12) {
-                                        VStack(alignment: .leading, spacing: 6) {
-                                            Text(server.name).font(.headline).foregroundStyle(Color.ngText)
-                                            Text(server.baseURL.absoluteString).font(.caption).foregroundStyle(Color.ngMuted).lineLimit(1)
-                                        }
-                                        Spacer()
-                                        Button(role: .destructive) { serverStore.delete(server) } label: { Image(systemName: "trash") }
-                                    }
-                                    .padding(18)
-                                    .ngSoftCard()
-                                }
-                            }
-                        }
-                    }
-                    .padding(20)
-                }
-            }
-            .navigationTitle("设置")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() } } }
+    var symbol: String {
+        switch self {
+        case .usd: return "$"
+        case .eur: return "€"
+        case .gbp: return "£"
+        case .cny: return "¥"
         }
     }
 }
 
+enum BillingSortKey: String, CaseIterable, Identifiable {
+    case remainingDays = "剩余天数"
+    case monthlyCost = "折算月成本"
+    var id: String { rawValue }
+}
+
 struct BillingOverviewView: View {
     @EnvironmentObject private var serverStore: ServerProfileStore
-    @Environment(\.dismiss) private var dismiss
+
     @State private var items: [BillingOverviewItem] = []
-    @State private var message = "正在读取到期与续费信息…"
+    @State private var message = "正在读取资产信息…"
     @State private var isLoading = false
+    @State private var selectedCurrency: BillingCurrency = .usd
+    @State private var sortKey: BillingSortKey = .remainingDays
+    @State private var ascending = true
+    @State private var exchangeRates: [BillingCurrency: Double] = [.usd: 1, .eur: 0.92, .gbp: 0.79, .cny: 7.20]
+    @State private var exchangeUpdatedAt: Date?
 
     var body: some View {
         NavigationStack {
             ZStack {
                 AppBackgroundView()
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 14) {
-                        Text("到期 / 续费")
-                            .font(.system(size: 34, weight: .black, design: .rounded))
-                        Text(message)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Color.ngMuted)
-                            .fixedSize(horizontal: false, vertical: true)
-
-                        if isLoading { ProgressView().frame(maxWidth: .infinity) }
-
-                        ForEach(groupedServers, id: \.id) { server in
-                            VStack(alignment: .leading, spacing: 12) {
-                                SectionCaption(text: server.name)
-                                let rows = items.filter { $0.server.id == server.id }
-                                if rows.isEmpty {
-                                    Text("暂无费用数据。")
-                                        .font(.subheadline)
-                                        .foregroundStyle(Color.ngMuted)
-                                        .padding(18)
-                                        .ngSoftCard()
-                                } else {
-                                    ForEach(rows) { item in BillingItemCard(item: item) }
-                                }
-                            }
-                        }
+                    LazyVStack(alignment: .leading, spacing: 18) {
+                        header
+                        controls
+                        summaryGrid
+                        sortControls
+                        assetRows
                     }
                     .padding(20)
+                    .padding(.bottom, 32)
                 }
             }
-            .navigationTitle("到期 / 续费")
+            .navigationTitle("资产")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) { Button("刷新") { Task { await load() } } }
-                ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() } }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { Task { await load() } } label: {
+                        if isLoading { ProgressView() } else { Image(systemName: "arrow.clockwise") }
+                    }
+                }
             }
-            .task { await load() }
+            .task {
+                await refreshRates()
+                await load()
+            }
+            .refreshable {
+                await refreshRates()
+                await load()
+            }
         }
     }
 
-    private var groupedServers: [ServerProfile] { serverStore.servers }
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("资产")
+                .font(.system(size: 34, weight: .black, design: .rounded))
+                .foregroundStyle(Color.ngText)
+            Text(message)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.ngMuted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var controls: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Text("基准币种")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundStyle(Color.ngMuted)
+
+                Picker("基准币种", selection: $selectedCurrency) {
+                    ForEach(BillingCurrency.allCases) { currency in
+                        Text(currency.title).tag(currency)
+                    }
+                }
+                .pickerStyle(.menu)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.ngBorder, lineWidth: 1))
+
+                Button("刷新汇率") { Task { await refreshRates() } }
+                    .font(.caption.weight(.bold))
+                    .buttonStyle(.bordered)
+
+                Spacer(minLength: 0)
+            }
+
+            Text(rateDescription)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.ngMuted)
+                .lineLimit(2)
+        }
+    }
+
+    private var summaryGrid: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+            BillingSummaryCard(icon: "creditcard", title: "折算月成本", value: currencyText(totalMonthlyCost), tint: .blue)
+            BillingSummaryCard(icon: "chart.line.uptrend.xyaxis", title: "平均每台 / 月", value: currencyText(averageMonthlyCost), tint: .purple)
+            BillingSummaryCard(icon: "chart.line.uptrend.xyaxis.circle", title: "折算剩余价值", value: currencyText(totalRemainingValue), tint: Color.ngPrimary)
+            BillingSummaryCard(icon: "exclamationmark.triangle", title: "30 天内到期", value: "\(expiringSoonCount) 台", tint: .orange)
+        }
+    }
+
+    private var sortControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("排序")
+                .font(.subheadline.weight(.bold))
+                .foregroundStyle(Color.ngMuted)
+            HStack(spacing: 10) {
+                sortButton(.remainingDays)
+                sortButton(.monthlyCost)
+                Spacer()
+            }
+        }
+    }
+
+    private func sortButton(_ key: BillingSortKey) -> some View {
+        Button {
+            if sortKey == key { ascending.toggle() } else { sortKey = key; ascending = true }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: sortKey == key ? (ascending ? "arrow.up" : "arrow.down") : "arrow.up.arrow.down")
+                Text(key.rawValue)
+            }
+            .font(.caption.weight(.black))
+            .foregroundStyle(sortKey == key ? Color.ngText : Color.ngMuted)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Capsule().fill(sortKey == key ? Color.white : Color.ngBackground.opacity(0.75)))
+            .overlay(Capsule().stroke(Color.ngBorder, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var assetRows: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionCaption(text: "机器")
+            if isLoading && items.isEmpty {
+                ProgressView()
+                    .frame(maxWidth: .infinity)
+                    .padding(30)
+                    .ngSoftCard()
+            } else if sortedItems.isEmpty {
+                Text("暂无资产数据。请确认 Token 拥有读取 metadata_* 的 KV 权限。")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.ngMuted)
+                    .padding(18)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .ngSoftCard()
+            } else {
+                ForEach(sortedItems) { item in
+                    AssetItemCard(item: item, currency: selectedCurrency, rates: exchangeRates)
+                }
+            }
+        }
+    }
+
+    private var sortedItems: [BillingOverviewItem] {
+        items.sorted { left, right in
+            let result: Bool
+            switch sortKey {
+            case .remainingDays:
+                let l = left.meta?.remainingDays ?? Int.max
+                let r = right.meta?.remainingDays ?? Int.max
+                if l == r { result = left.displayName.localizedCaseInsensitiveCompare(right.displayName) == .orderedAscending } else { result = l < r }
+            case .monthlyCost:
+                let l = convertedMonthlyCost(left)
+                let r = convertedMonthlyCost(right)
+                if abs(l - r) < 0.0001 { result = left.displayName.localizedCaseInsensitiveCompare(right.displayName) == .orderedAscending } else { result = l < r }
+            }
+            return ascending ? result : !result
+        }
+    }
+
+    private var totalMonthlyCost: Double { items.reduce(0) { $0 + convertedMonthlyCost($1) } }
+    private var averageMonthlyCost: Double { items.isEmpty ? 0 : totalMonthlyCost / Double(items.count) }
+    private var totalRemainingValue: Double { items.reduce(0) { $0 + convertedRemainingValue($1) } }
+    private var expiringSoonCount: Int { items.filter { item in guard let days = item.meta?.remainingDays else { return false }; return days >= 0 && days <= 30 }.count }
+
+    private var rateDescription: String {
+        let source = exchangeUpdatedAt.map { NodeGetFormatters.dateTime($0) } ?? "内置备用汇率"
+        return "汇率基准：USD，更新于 \(source)。费用字段来自 NodeGet Agent metadata。"
+    }
+
+    private func convertedMonthlyCost(_ item: BillingOverviewItem) -> Double {
+        guard let meta = item.meta, meta.price > 0, meta.priceCycle > 0 else { return 0 }
+        return convert(meta.price / Double(meta.priceCycle) * 30, from: currency(from: meta.priceUnit), to: selectedCurrency)
+    }
+
+    private func convertedRemainingValue(_ item: BillingOverviewItem) -> Double {
+        guard let meta = item.meta, meta.price > 0, meta.priceCycle > 0, let days = meta.remainingDays, days > 0 else { return 0 }
+        return convert(meta.price / Double(meta.priceCycle) * Double(days), from: currency(from: meta.priceUnit), to: selectedCurrency)
+    }
+
+    private func currencyText(_ value: Double) -> String { "\(selectedCurrency.symbol)\(String(format: "%.2f", value))" }
+
+    private func convert(_ amount: Double, from source: BillingCurrency, to target: BillingCurrency) -> Double {
+        let sourceRate = exchangeRates[source] ?? 1
+        let targetRate = exchangeRates[target] ?? 1
+        guard sourceRate > 0 else { return amount }
+        return amount / sourceRate * targetRate
+    }
+
+    private func currency(from unit: String) -> BillingCurrency {
+        let clean = unit.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        if ["USD", "$", "US$"].contains(clean) { return .usd }
+        if ["EUR", "€"].contains(clean) { return .eur }
+        if ["GBP", "£"].contains(clean) { return .gbp }
+        if ["CNY", "RMB", "CN¥", "¥", "￥"].contains(clean) { return .cny }
+        return .usd
+    }
 
     private func load() async {
         guard !isLoading else { return }
@@ -426,69 +547,137 @@ struct BillingOverviewView: View {
         var errors: [String] = []
 
         for server in serverStore.servers {
-            guard let token = KeychainStore.shared.token(for: server.id) else {
-                errors.append("\(server.name)：缺少 Token")
-                continue
-            }
+            guard let token = KeychainStore.shared.token(for: server.id) else { errors.append("\(server.name)：缺少 Token"); continue }
             let client = NodeGetClient(baseURL: server.baseURL)
             do {
                 let uuids = try await client.listAllAgentUUIDs(token: token).sorted()
                 let meta = try await client.metadataMap(token: token, uuids: uuids)
                 let staticMap = (try? await client.latestStaticInfoMap(token: token, uuids: uuids)) ?? [:]
-                for uuid in uuids {
-                    output.append(BillingOverviewItem(server: server, uuid: uuid, meta: meta[uuid], staticInfo: staticMap[uuid]))
-                }
+                for uuid in uuids { output.append(BillingOverviewItem(server: server, uuid: uuid, meta: meta[uuid], staticInfo: staticMap[uuid])) }
             } catch {
                 errors.append("\(server.name)：\(error.localizedDescription)")
             }
         }
+        items = output
+        message = errors.isEmpty ? "读取到 \(items.count) 台机器的资产信息。" : "读取到 \(items.count) 台机器；部分失败：\(errors.prefix(2).joined(separator: "；"))"
+    }
 
-        items = output.sorted { left, right in
-            let l = left.meta?.remainingDays ?? Int.max
-            let r = right.meta?.remainingDays ?? Int.max
-            if l != r { return l < r }
-            return left.displayName.localizedCaseInsensitiveCompare(right.displayName) == .orderedAscending
+    private func refreshRates() async {
+        guard let url = URL(string: "https://api.frankfurter.app/latest?from=USD&to=EUR,GBP,CNY") else { return }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            let decoded = try JSONDecoder().decode(FrankfurterResponse.self, from: data)
+            var rates: [BillingCurrency: Double] = [.usd: 1]
+            rates[.eur] = decoded.rates["EUR"] ?? exchangeRates[.eur]
+            rates[.gbp] = decoded.rates["GBP"] ?? exchangeRates[.gbp]
+            rates[.cny] = decoded.rates["CNY"] ?? exchangeRates[.cny]
+            exchangeRates = rates
+            exchangeUpdatedAt = Date()
+        } catch {
+            // 保留内置备用汇率。
         }
-        message = errors.isEmpty ? "读取到 \(items.count) 台机器的费用信息。" : "读取到 \(items.count) 台机器；部分失败：\(errors.prefix(2).joined(separator: "；"))"
     }
 }
+
+struct FrankfurterResponse: Decodable { let rates: [String: Double] }
 
 struct BillingOverviewItem: Identifiable {
     let server: ServerProfile
     let uuid: String
     let meta: AgentMeta?
     let staticInfo: StaticAgentInfo?
-
     var id: String { "\(server.id.uuidString)-\(uuid)" }
     var displayName: String { meta?.name.nilIfEmpty ?? staticInfo?.displayName ?? uuid }
 }
 
-struct BillingItemCard: View {
+struct BillingSummaryCard: View {
+    let icon: String
+    let title: String
+    let value: String
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.title3.weight(.bold))
+                .foregroundStyle(tint)
+                .frame(width: 38, height: 38)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(tint.opacity(0.13)))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.caption.weight(.bold)).foregroundStyle(Color.ngMuted)
+                Text(value).font(.title3.weight(.black)).foregroundStyle(Color.ngText).monospacedDigit().minimumScaleFactor(0.7).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .ngSoftCard()
+    }
+}
+
+struct AssetItemCard: View {
     let item: BillingOverviewItem
+    let currency: BillingCurrency
+    let rates: [BillingCurrency: Double]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(item.displayName)
-                        .font(.title3.weight(.black))
-                        .foregroundStyle(Color.ngText)
-                    Text(item.uuid)
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(Color.ngMuted)
-                        .lineLimit(1)
+                    Text(item.displayName).font(.title3.weight(.black)).foregroundStyle(Color.ngText)
+                    Text("\(String(item.uuid.suffix(8))) · \(item.server.name)").font(.caption.weight(.semibold)).foregroundStyle(Color.ngMuted).lineLimit(1)
                 }
                 Spacer()
                 remainBadge
             }
             Divider()
-            DetailInfoRow(title: "到期", value: NodeGetFormatters.date(item.meta?.expiryDate))
-            DetailInfoRow(title: "剩余", value: NodeGetFormatters.days(item.meta?.remainingDays))
-            DetailInfoRow(title: "续费金额", value: item.meta?.displayPrice ?? "--")
-            DetailInfoRow(title: "计费周期", value: item.meta?.cycleText ?? "--")
+            HStack(spacing: 14) {
+                AssetMetric(title: "价格 / 周期", value: "\(convertedText(price)) / \(cycleDays)天", subvalue: "≈ \(convertedText(monthlyCost)) / 30天")
+                AssetMetric(title: "到期时间", value: NodeGetFormatters.date(item.meta?.expiryDate), subvalue: item.meta?.remainingDays.map { "剩余 \($0) 天" } ?? "--")
+            }
+            HStack(spacing: 14) {
+                AssetMetric(title: "剩余价值", value: convertedText(remainingValue), subvalue: item.meta?.displayPrice ?? "原始价格 --")
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("剩余时间占比").font(.caption.weight(.bold)).foregroundStyle(Color.ngMuted)
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 4).fill(Color.ngBorder)
+                            RoundedRectangle(cornerRadius: 4).fill(progressColor).frame(width: geo.size.width * progress)
+                        }
+                    }
+                    .frame(height: 8)
+                    Text(item.meta?.remainingDays.map { "剩余 \($0) 天" } ?? "--").font(.caption2.weight(.semibold)).foregroundStyle(Color.ngMuted)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .padding(18)
         .ngSoftCard()
+    }
+
+    private var price: Double { guard let meta = item.meta else { return 0 }; return convert(meta.price, from: sourceCurrency) }
+    private var monthlyCost: Double { guard let meta = item.meta, meta.priceCycle > 0 else { return 0 }; return convert(meta.price / Double(meta.priceCycle) * 30, from: sourceCurrency) }
+    private var remainingValue: Double { guard let meta = item.meta, meta.priceCycle > 0, let days = meta.remainingDays, days > 0 else { return 0 }; return convert(meta.price / Double(meta.priceCycle) * Double(days), from: sourceCurrency) }
+    private var cycleDays: Int { max(item.meta?.priceCycle ?? 0, 0) }
+
+    private var sourceCurrency: BillingCurrency {
+        let clean = (item.meta?.priceUnit ?? "USD").trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        if ["USD", "$", "US$"].contains(clean) { return .usd }
+        if ["EUR", "€"].contains(clean) { return .eur }
+        if ["GBP", "£"].contains(clean) { return .gbp }
+        if ["CNY", "RMB", "CN¥", "¥", "￥"].contains(clean) { return .cny }
+        return .usd
+    }
+
+    private var progress: CGFloat {
+        guard let remaining = item.meta?.remainingDays, let cycle = item.meta?.priceCycle, cycle > 0 else { return 0 }
+        return CGFloat(min(max(Double(remaining) / Double(cycle), 0), 1))
+    }
+
+    private var progressColor: Color {
+        let days = item.meta?.remainingDays ?? 9999
+        if days <= 7 { return .red }
+        if days <= 30 { return .orange }
+        return Color.ngPrimary
     }
 
     private var remainBadge: some View {
@@ -500,6 +689,157 @@ struct BillingItemCard: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(Capsule().fill(color.opacity(0.13)))
+    }
+
+    private func convert(_ amount: Double, from source: BillingCurrency) -> Double {
+        let sourceRate = rates[source] ?? 1
+        let targetRate = rates[currency] ?? 1
+        guard sourceRate > 0 else { return amount }
+        return amount / sourceRate * targetRate
+    }
+
+    private func convertedText(_ value: Double) -> String { "\(currency.symbol)\(String(format: "%.2f", value))" }
+}
+
+struct AssetMetric: View {
+    let title: String
+    let value: String
+    let subvalue: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title).font(.caption.weight(.bold)).foregroundStyle(Color.ngMuted)
+            Text(value).font(.headline.weight(.black)).foregroundStyle(Color.ngText).lineLimit(1).minimumScaleFactor(0.68)
+            Text(subvalue).font(.caption2.weight(.semibold)).foregroundStyle(Color.ngMuted).lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+struct SettingsView: View {
+    @EnvironmentObject private var serverStore: ServerProfileStore
+    @Environment(\.openURL) private var openURL
+
+    private let githubURL = URL(string: "https://github.com/3257085208/NodeGetMonitor-iOS")!
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                AppBackgroundView()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 22) {
+                        Text("设置")
+                            .font(.system(size: 34, weight: .black, design: .rounded))
+                            .foregroundStyle(Color.ngText)
+
+                        masterSection
+                        projectSection
+                        privacySection
+                    }
+                    .padding(20)
+                    .padding(.bottom, 32)
+                }
+            }
+            .navigationTitle("设置")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    private var masterSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionCaption(text: "主控")
+
+            NavigationLink {
+                AddServerView().environmentObject(serverStore)
+            } label: {
+                HomeActionCard(icon: "plus.circle.fill", title: "添加主控", subtitle: "配置 NodeGet Server 地址与 Token")
+            }
+            .buttonStyle(.plain)
+
+            if serverStore.servers.isEmpty {
+                Text("暂无主控。添加后，监控页会直接聚合显示全部 Agent。")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.ngMuted)
+                    .padding(18)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .ngSoftCard()
+            } else {
+                VStack(spacing: 12) {
+                    ForEach(serverStore.servers) { server in
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(server.name)
+                                    .font(.headline.weight(.black))
+                                    .foregroundStyle(Color.ngText)
+                                Text(server.baseURL.absoluteString)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(Color.ngMuted)
+                                    .lineLimit(1)
+                            }
+                            Spacer()
+                            Button(role: .destructive) {
+                                serverStore.delete(server)
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.headline)
+                            }
+                        }
+                        .padding(18)
+                        .ngSoftCard()
+                    }
+                }
+            }
+        }
+    }
+
+    private var projectSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionCaption(text: "项目")
+            VStack(spacing: 14) {
+                DetailInfoRow(title: "App", value: "NodeGet Monitor")
+                DetailInfoRow(title: "版本", value: "0.5.0")
+                DetailInfoRow(title: "刷新", value: "监控与详情页每 1 秒自动刷新")
+                Button {
+                    openURL(githubURL)
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("GitHub 开源地址")
+                                .font(.headline.weight(.black))
+                                .foregroundStyle(Color.ngText)
+                            Text(githubURL.absoluteString)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(Color.ngMuted)
+                                .lineLimit(1)
+                        }
+                        Spacer()
+                        Image(systemName: "arrow.up.right")
+                            .font(.headline.weight(.bold))
+                            .foregroundStyle(Color.ngPrimary)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(18)
+            .ngSoftCard()
+        }
+    }
+
+    private var privacySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionCaption(text: "隐私")
+            VStack(alignment: .leading, spacing: 10) {
+                Label("Token 保存到本机 iOS Keychain", systemImage: "key.fill")
+                    .font(.headline.weight(.black))
+                    .foregroundStyle(Color.ngText)
+                Text("App 不会把你的主控地址、Token、Agent UUID 或监控数据上传到第三方服务器。资产页的币种换算会从公开汇率接口读取汇率；失败时使用内置备用汇率。")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.ngMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(18)
+            .ngSoftCard()
+        }
     }
 }
 
@@ -516,7 +856,7 @@ struct AboutView: View {
                         .font(.headline)
                         .foregroundStyle(Color.ngMuted)
                     VStack(spacing: 12) {
-                        DetailInfoRow(title: "版本", value: "0.4.9")
+                        DetailInfoRow(title: "版本", value: "0.5.0")
                         DetailInfoRow(title: "刷新", value: "首页与详情页每 1 秒自动刷新")
                         DetailInfoRow(title: "构建", value: "Unsigned IPA 文件名会带版本号")
                     }

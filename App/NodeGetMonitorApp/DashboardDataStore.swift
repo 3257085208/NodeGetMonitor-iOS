@@ -21,7 +21,7 @@ final class ServerDashboardDataStore: ObservableObject {
         guard !isRefreshing else { return }
 
         guard let token = KeychainStore.shared.token(for: profile.id) else {
-            serverMessage = "未找到 Token。请到右上角菜单 > 设置里重新添加主控。"
+            serverMessage = "未找到 Token。请到下方“设置”页重新添加主控。"
             return
         }
 

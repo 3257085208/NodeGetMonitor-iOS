@@ -81,6 +81,12 @@ public enum NodeGetFormatters {
         return clockTime(date)
     }
 
+    public static func dateTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        return formatter.string(from: date)
+    }
+
 }
 
 public enum NodeGetStats {
