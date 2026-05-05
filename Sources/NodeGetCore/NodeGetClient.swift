@@ -84,15 +84,23 @@ public final class NodeGetClient {
         token: String,
         uuid: String,
         limit: Int = 240,
+        windowMilliseconds: Int64? = 240_000,
         fields: [String] = AgentSummary.defaultFields
     ) async throws -> [AgentSummary] {
+        var conditions: [QueryCondition] = [.uuid(uuid)]
+        if let windowMilliseconds {
+            let now = Int64(Date().timeIntervalSince1970 * 1000)
+            conditions.append(.timestampFrom(now - windowMilliseconds))
+        }
+        conditions.append(.limit(limit))
+
         let rows: [AgentSummary] = try await call(
             method: "agent_query_dynamic_summary",
             params: AgentDynamicSummaryQueryParams(
                 token: token,
                 dynamicSummaryQuery: DynamicSummaryQuery(
                     fields: fields,
-                    condition: [.uuid(uuid), .limit(limit)]
+                    condition: conditions
                 )
             ),
             resultType: [AgentSummary].self
@@ -192,25 +200,41 @@ public final class NodeGetClient {
         uuid: String,
         type: String,
         windowMilliseconds: Int64 = 3_600_000,
-        limit: Int? = nil
+        limit: Int? = 240
     ) async throws -> [TaskQueryResult] {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
-        var conditions: [TaskQueryCondition] = [
+        var windowedConditions: [TaskQueryCondition] = [
             .uuid(uuid),
             .timestampFromTo(now - windowMilliseconds, now),
             .type(type)
         ]
-        if let limit { conditions.append(.limit(limit)) }
+        if let limit { windowedConditions.append(.limit(limit)) }
 
-        let rows: [TaskQueryResult] = try await call(
+        let windowedRows: [TaskQueryResult] = try await call(
             method: "task_query",
             params: TaskQueryParams(
                 token: token,
-                taskDataQuery: TaskDataQuery(condition: conditions)
+                taskDataQuery: TaskDataQuery(condition: windowedConditions)
             ),
             resultType: [TaskQueryResult].self
         )
-        return rows.sorted { $0.timestamp < $1.timestamp }
+
+        if !windowedRows.isEmpty {
+            return windowedRows.sorted { $0.timestamp < $1.timestamp }
+        }
+
+        var fallbackConditions: [TaskQueryCondition] = [.uuid(uuid), .type(type)]
+        if let limit { fallbackConditions.append(.limit(limit)) }
+
+        let fallbackRows: [TaskQueryResult] = try await call(
+            method: "task_query",
+            params: TaskQueryParams(
+                token: token,
+                taskDataQuery: TaskDataQuery(condition: fallbackConditions)
+            ),
+            resultType: [TaskQueryResult].self
+        )
+        return fallbackRows.sorted { $0.timestamp < $1.timestamp }
     }
 }
 

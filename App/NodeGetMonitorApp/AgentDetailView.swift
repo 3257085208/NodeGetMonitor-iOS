@@ -20,6 +20,8 @@ struct AgentDetailView: View {
     @State private var extraMessage = "正在读取趋势与 Ping 数据…"
     @State private var isLoadingExtra = false
 
+    private let refreshTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
+
     var body: some View {
         ZStack {
             AppBackgroundView()
@@ -51,10 +53,12 @@ struct AgentDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await loadExtraData()
-            await autoRefreshLoop()
         }
         .refreshable {
             await loadExtraData()
+        }
+        .onReceive(refreshTimer) { _ in
+            Task { await loadExtraData(showLoading: false) }
         }
     }
 
@@ -177,11 +181,12 @@ struct AgentDetailView: View {
                 }
             }
 
+            let rows = trendRowsForChart
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                TrendMetricCard(title: "CPU %", value: NodeGetFormatters.percent(history.last?.cpuUsage ?? currentSummary?.cpuUsage), values: history.map { $0.cpuUsage }, color: .blue)
-                TrendMetricCard(title: "内存 %", value: NodeGetFormatters.percent(history.last?.memoryUsagePercent ?? currentSummary?.memoryUsagePercent), values: history.map { $0.memoryUsagePercent }, color: Color.ngPrimary)
-                TrendMetricCard(title: "下行", value: NodeGetFormatters.speed(history.last?.receiveSpeed ?? currentSummary?.receiveSpeed), values: history.map { $0.receiveSpeed }, color: .purple)
-                TrendMetricCard(title: "上行", value: NodeGetFormatters.speed(history.last?.transmitSpeed ?? currentSummary?.transmitSpeed), values: history.map { $0.transmitSpeed }, color: .orange)
+                TrendMetricCard(title: "CPU %", value: NodeGetFormatters.percent(rows.last?.cpuUsage ?? currentSummary?.cpuUsage), values: rows.map { $0.cpuUsage }, color: .blue)
+                TrendMetricCard(title: "内存 %", value: NodeGetFormatters.percent(rows.last?.memoryUsagePercent ?? currentSummary?.memoryUsagePercent), values: rows.map { $0.memoryUsagePercent }, color: Color.ngPrimary)
+                TrendMetricCard(title: "下行", value: NodeGetFormatters.speed(rows.last?.receiveSpeed ?? currentSummary?.receiveSpeed), values: rows.map { $0.receiveSpeed }, color: .purple)
+                TrendMetricCard(title: "上行", value: NodeGetFormatters.speed(rows.last?.transmitSpeed ?? currentSummary?.transmitSpeed), values: rows.map { $0.transmitSpeed }, color: .orange)
             }
 
             Text(extraMessage)
@@ -327,6 +332,14 @@ struct AgentDetailView: View {
         return Array(repeating: true, count: max(0, 48 - values.count)) + values
     }
 
+    private var trendRowsForChart: [AgentSummary] {
+        if !history.isEmpty { return history }
+        if let currentSummary {
+            return Array(repeating: currentSummary, count: 16)
+        }
+        return []
+    }
+
     private var loadText: String {
         let one = currentSummary?.loadOne.map { String(format: "%.2f", $0) } ?? "--"
         let five = currentSummary?.loadFive.map { String(format: "%.2f", $0) } ?? "--"
@@ -359,14 +372,6 @@ struct AgentDetailView: View {
         return String(uuid.prefix(8)) + "..." + String(uuid.suffix(4))
     }
 
-    private func autoRefreshLoop() async {
-        while !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: 15_000_000_000)
-            if Task.isCancelled { break }
-            await loadExtraData(showLoading: false)
-        }
-    }
-
     private func loadExtraData(showLoading: Bool = true) async {
         guard !isLoadingExtra else { return }
 
@@ -375,10 +380,8 @@ struct AgentDetailView: View {
             return
         }
 
-        if showLoading { isLoadingExtra = true }
-        defer {
-            if showLoading { isLoadingExtra = false }
-        }
+        isLoadingExtra = true
+        defer { isLoadingExtra = false }
 
         let client = NodeGetClient(baseURL: server.baseURL)
 
@@ -429,11 +432,37 @@ struct AgentDetailView: View {
     }
 
     private func loadHistory(client: NodeGetClient, token: String) async -> Result<[AgentSummary], Error> {
+        let now = Int64(Date().timeIntervalSince1970 * 1000)
         do {
-            let rows = try await client.dynamicSummaryHistory(token: token, uuid: uuid, limit: 240)
-            return .success(rows)
+            let rows = try await client.dynamicSummaryHistory(
+                token: token,
+                uuid: uuid,
+                limit: 240,
+                windowMilliseconds: 240_000
+            )
+            if !rows.isEmpty { return .success(rows) }
+
+            let fallbackRows = try await client.dynamicSummaryAverage(
+                token: token,
+                uuid: uuid,
+                timestampFrom: now - 240_000,
+                timestampTo: now,
+                points: 80
+            )
+            return .success(fallbackRows)
         } catch {
-            return .failure(error)
+            do {
+                let fallbackRows = try await client.dynamicSummaryAverage(
+                    token: token,
+                    uuid: uuid,
+                    timestampFrom: now - 240_000,
+                    timestampTo: now,
+                    points: 80
+                )
+                return .success(fallbackRows)
+            } catch {
+                return .failure(error)
+            }
         }
     }
 

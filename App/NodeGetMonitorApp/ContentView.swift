@@ -1,7 +1,225 @@
 import SwiftUI
 
+private enum HomeMenuSheet: String, Identifiable {
+    case settings
+    case about
+    case privacy
+
+    var id: String { rawValue }
+}
+
 struct ContentView: View {
     @EnvironmentObject private var serverStore: ServerProfileStore
+    @State private var activeSheet: HomeMenuSheet?
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                AppBackgroundView()
+
+                if let primaryServer = serverStore.servers.first {
+                    HomeDashboardView(profile: primaryServer)
+                        .id(primaryServer.id)
+                } else {
+                    EmptyHomeView(openSettings: { activeSheet = .settings })
+                }
+            }
+            .navigationTitle("NodeGet")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button {
+                            activeSheet = .settings
+                        } label: {
+                            Label("设置", systemImage: "gearshape")
+                        }
+
+                        Button {
+                            activeSheet = .about
+                        } label: {
+                            Label("关于", systemImage: "info.circle")
+                        }
+
+                        Button {
+                            activeSheet = .privacy
+                        } label: {
+                            Label("隐私", systemImage: "hand.raised")
+                        }
+                    } label: {
+                        Image(systemName: "line.3.horizontal")
+                            .font(.title3.weight(.bold))
+                    }
+                }
+            }
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .settings:
+                    SettingsView()
+                        .environmentObject(serverStore)
+                case .about:
+                    AboutView()
+                case .privacy:
+                    PrivacyView()
+                }
+            }
+        }
+    }
+}
+
+struct HomeDashboardView: View {
+    @StateObject private var store: ServerDashboardDataStore
+    @State private var searchText = ""
+
+    private let refreshTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
+
+    init(profile: ServerProfile) {
+        _store = StateObject(wrappedValue: ServerDashboardDataStore(profile: profile))
+    }
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 18) {
+                header
+
+                if store.filteredSummaries(searchText: searchText).isEmpty {
+                    emptyView
+                } else {
+                    agentCards
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 8)
+            .padding(.bottom, 32)
+        }
+        .searchable(text: $searchText, prompt: "搜索节点…")
+        .task {
+            await store.refresh()
+        }
+        .refreshable {
+            await store.refresh()
+        }
+        .onReceive(refreshTimer) { _ in
+            Task { await store.refresh(showLoading: false) }
+        }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("NodeGet")
+                .font(.system(size: 38, weight: .black, design: .rounded))
+                .foregroundStyle(Color.black)
+
+            HStack(spacing: 10) {
+                DashboardPill(title: "全部", value: "\(store.summaries.count)")
+                DashboardPill(title: store.profile.name, value: "", active: false)
+            }
+
+            HStack(alignment: .center, spacing: 12) {
+                Text(store.serverMessage)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.ngMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Spacer(minLength: 8)
+
+                Button {
+                    Task { await store.refresh() }
+                } label: {
+                    if store.isLoading {
+                        ProgressView()
+                            .tint(Color.ngPrimary)
+                            .frame(width: 42, height: 42)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.title3.weight(.bold))
+                            .foregroundStyle(Color.ngPrimary)
+                            .frame(width: 42, height: 42)
+                    }
+                }
+                .background(Circle().fill(Color.ngPrimarySoft))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var emptyView: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(store.isLoading ? "正在读取 Agent…" : "暂无 Agent 数据")
+                .font(.system(size: 24, weight: .black, design: .rounded))
+                .foregroundStyle(Color.ngText)
+            Text("首页会自动显示当前主控下的 Agent 卡片。下拉或等待 15 秒会自动刷新。")
+                .font(.subheadline)
+                .foregroundStyle(Color.ngMuted)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .ngSoftCard()
+    }
+
+    private var agentCards: some View {
+        ForEach(store.filteredSummaries(searchText: searchText)) { summary in
+            NavigationLink {
+                AgentDetailView(
+                    server: store.profile,
+                    uuid: summary.uuid,
+                    summary: summary,
+                    staticInfo: store.staticInfoByUUID[summary.uuid],
+                    meta: store.metaByUUID[summary.uuid]
+                )
+            } label: {
+                DashboardAgentCardView(
+                    summary: summary,
+                    staticInfo: store.staticInfoByUUID[summary.uuid],
+                    meta: store.metaByUUID[summary.uuid]
+                )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+struct EmptyHomeView: View {
+    let openSettings: () -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("NodeGet")
+                    .font(.system(size: 42, weight: .black, design: .rounded))
+                    .foregroundStyle(Color.black)
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("还没有配置主控")
+                        .font(.title2.bold())
+                    Text("点右上角菜单进入设置，添加 NodeGet Server 地址和 Token。配置完成后，首页会直接显示 Agent 列表。")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.ngMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Button {
+                        openSettings()
+                    } label: {
+                        Label("打开设置", systemImage: "gearshape.fill")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(RoundedRectangle(cornerRadius: 18).fill(Color.ngPrimary))
+                            .foregroundStyle(.white)
+                    }
+                    .padding(.top, 8)
+                }
+                .padding(20)
+                .ngSoftCard()
+            }
+            .padding(20)
+        }
+    }
+}
+
+struct SettingsView: View {
+    @EnvironmentObject private var serverStore: ServerProfileStore
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
@@ -9,146 +227,125 @@ struct ContentView: View {
                 AppBackgroundView()
 
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 24) {
-                        heroSection
+                    VStack(alignment: .leading, spacing: 18) {
+                        Text("设置")
+                            .font(.system(size: 34, weight: .black, design: .rounded))
 
-                        quickActionsSection
-
-                        serversSection
-
-                        versionSection
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 8)
-                    .padding(.bottom, 32)
-                }
-            }
-            .navigationTitle("NodeGet Monitor")
-            .navigationBarTitleDisplayMode(.inline)
-        }
-    }
-
-    private var heroSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("NodeGet Monitor")
-                .font(.system(size: 34, weight: .black, design: .rounded))
-                .foregroundStyle(Color.black)
-
-            Text("把 NodeGet Server 的 Agent 数据做成更适合 iPhone 的轻量监控仪表盘。")
-                .font(.subheadline)
-                .foregroundStyle(Color.ngMuted)
-                .fixedSize(horizontal: false, vertical: true)
-
-            HStack(spacing: 10) {
-                DashboardPill(title: "服务器", value: "\(serverStore.servers.count)")
-                DashboardPill(title: "模式", value: "iPhone", active: false)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 8)
-    }
-
-    private var quickActionsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionCaption(text: "快速开始")
-
-            VStack(spacing: 12) {
-                NavigationLink {
-                    AddServerView()
-                } label: {
-                    HomeActionCard(
-                        icon: "plus.circle.fill",
-                        title: "添加 NodeGet Server",
-                        subtitle: "保存 URL 与 Token，接入你的真实 Agent 数据"
-                    )
-                }
-                .buttonStyle(.plain)
-
-                NavigationLink {
-                    DemoDashboardView()
-                } label: {
-                    HomeActionCard(
-                        icon: "chart.line.uptrend.xyaxis.circle.fill",
-                        title: "查看 Demo 仪表盘",
-                        subtitle: "先看 UI 效果，再决定要不要继续做更多细节"
-                    )
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    private var serversSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionCaption(text: "我的服务器")
-
-            if serverStore.servers.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("还没有保存服务器")
-                        .font(.title3.bold())
-                    Text("先添加一个 NodeGet Server。保存后，首页会显示你的服务器卡片，点进去就是监控仪表盘。")
-                        .font(.subheadline)
-                        .foregroundStyle(Color.ngMuted)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(20)
-                .ngSoftCard()
-            } else {
-                VStack(spacing: 12) {
-                    ForEach(serverStore.servers) { server in
                         NavigationLink {
-                            ServerDetailView(profile: server)
+                            AddServerView()
+                                .environmentObject(serverStore)
                         } label: {
-                            ServerOverviewCard(profile: server)
+                            HomeActionCard(
+                                icon: "plus.circle.fill",
+                                title: "添加主控",
+                                subtitle: "配置 NodeGet Server 地址与 Token"
+                            )
                         }
                         .buttonStyle(.plain)
-                        .contextMenu {
-                            Button(role: .destructive) {
-                                serverStore.delete(server)
-                            } label: {
-                                Label("删除服务器", systemImage: "trash")
+
+                        VStack(alignment: .leading, spacing: 12) {
+                            SectionCaption(text: "主控地址")
+                            if serverStore.servers.isEmpty {
+                                Text("暂无主控。")
+                                    .font(.subheadline)
+                                    .foregroundStyle(Color.ngMuted)
+                                    .padding(18)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .ngSoftCard()
+                            } else {
+                                ForEach(serverStore.servers) { server in
+                                    HStack(spacing: 12) {
+                                        VStack(alignment: .leading, spacing: 6) {
+                                            Text(server.name)
+                                                .font(.headline)
+                                                .foregroundStyle(Color.ngText)
+                                            Text(server.baseURL.absoluteString)
+                                                .font(.caption)
+                                                .foregroundStyle(Color.ngMuted)
+                                                .lineLimit(1)
+                                        }
+                                        Spacer()
+                                        Button(role: .destructive) {
+                                            serverStore.delete(server)
+                                        } label: {
+                                            Image(systemName: "trash")
+                                        }
+                                    }
+                                    .padding(18)
+                                    .ngSoftCard()
+                                }
                             }
                         }
                     }
+                    .padding(20)
+                }
+            }
+            .navigationTitle("设置")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成") { dismiss() }
                 }
             }
         }
     }
+}
 
-    private var versionSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionCaption(text: "当前版本")
+struct AboutView: View {
+    @Environment(\.dismiss) private var dismiss
 
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text("App")
-                        .font(.headline)
-                    Spacer()
-                    Text("NodeGet Monitor")
-                        .font(.headline)
-                        .foregroundStyle(Color.ngMuted)
-                }
-
-                Divider()
-
-                HStack {
-                    Text("Version")
-                        .font(.headline)
-                    Spacer()
-                    Text("0.4.5")
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                AppBackgroundView()
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("NodeGet")
+                        .font(.system(size: 38, weight: .black, design: .rounded))
+                    Text("iPhone 原生监控仪表盘。")
                         .font(.headline)
                         .foregroundStyle(Color.ngMuted)
+                    VStack(spacing: 12) {
+                        DetailInfoRow(title: "版本", value: "0.4.6")
+                        DetailInfoRow(title: "刷新", value: "首页与详情页每 15 秒自动刷新")
+                        DetailInfoRow(title: "构建", value: "Unsigned IPA 文件名会带版本号")
+                    }
+                    .padding(18)
+                    .ngSoftCard()
+                    Spacer()
                 }
-
-                Divider()
-
-                Text("这一版开始接入趋势、Ping/TCP Ping、在线状态、费用元数据等 Dashboard 模块，继续向 StatusShow 前端风格靠近。")
-                    .font(.subheadline)
-                    .foregroundStyle(Color.ngMuted)
-                    .fixedSize(horizontal: false, vertical: true)
+                .padding(20)
             }
-            .padding(20)
-            .ngSoftCard()
+            .navigationTitle("关于")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() } } }
+        }
+    }
+}
+
+struct PrivacyView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                AppBackgroundView()
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("隐私")
+                            .font(.system(size: 38, weight: .black, design: .rounded))
+                        Text("Token 保存在本机 iOS Keychain。App 不会把你的主控地址、Token、Agent UUID 或监控数据上传到第三方服务器。")
+                            .font(.headline)
+                            .foregroundStyle(Color.ngMuted)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(18)
+                            .ngSoftCard()
+                    }
+                    .padding(20)
+                }
+            }
+            .navigationTitle("隐私")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() } } }
         }
     }
 }
@@ -182,34 +379,6 @@ struct HomeActionCard: View {
                 .foregroundStyle(Color.ngMuted.opacity(0.8))
         }
         .padding(18)
-        .ngSoftCard()
-    }
-}
-
-struct ServerOverviewCard: View {
-    let profile: ServerProfile
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(profile.name)
-                    .font(.system(size: 22, weight: .black, design: .rounded))
-                    .foregroundStyle(Color.black)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.75)
-                Text(profile.baseURL.absoluteString)
-                    .font(.subheadline)
-                    .foregroundStyle(Color.ngMuted)
-                    .lineLimit(1)
-            }
-
-            Spacer()
-
-            Image(systemName: "chevron.right")
-                .font(.headline)
-                .foregroundStyle(Color.ngMuted.opacity(0.8))
-        }
-        .padding(20)
         .ngSoftCard()
     }
 }
