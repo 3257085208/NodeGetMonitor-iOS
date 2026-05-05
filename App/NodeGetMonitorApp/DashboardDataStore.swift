@@ -40,6 +40,7 @@ final class ServerDashboardDataStore: ObservableObject {
             agentUUIDs = sortedUUIDs
 
             let latestSummaries = try await client.latestDynamicSummaries(token: token, uuids: sortedUUIDs)
+            LocalTrendStore.shared.append(contentsOf: latestSummaries)
             summaries = latestSummaries.sorted { left, right in
                 displayName(for: left.uuid).localizedCaseInsensitiveCompare(displayName(for: right.uuid)) == .orderedAscending
             }

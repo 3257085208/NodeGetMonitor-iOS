@@ -127,22 +127,37 @@ struct RingMetricView: View {
     let progress: Double
     var size: CGFloat = 92
 
+    @State private var animatedProgress: Double = 0
+    @State private var previousProgress: Double = 0
+    @State private var flashScale: CGFloat = 1
+
+    private var ringColor: Color {
+        metricColor(for: progress)
+    }
+
     var body: some View {
         ZStack {
             Circle()
                 .stroke(Color.ngBorder, lineWidth: size > 80 ? 9 : 7)
+
             Circle()
-                .trim(from: 0, to: progress)
-                .stroke(Color.ngPrimary, style: StrokeStyle(lineWidth: size > 80 ? 9 : 7, lineCap: .round))
+                .trim(from: 0, to: animatedProgress)
+                .stroke(ringColor, style: StrokeStyle(lineWidth: size > 80 ? 9 : 7, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-                .shadow(color: Color.ngPrimary.opacity(0.22), radius: 12, x: 0, y: 6)
+                .shadow(color: ringColor.opacity(0.26), radius: size > 80 ? 16 : 12, x: 0, y: 7)
+
+            Circle()
+                .fill(Color.white)
+                .padding(size > 80 ? 20 : 16)
+                .shadow(color: Color.ngBorder.opacity(0.7), radius: 0, x: 0, y: 0)
 
             VStack(spacing: 2) {
                 Text(value)
                     .font(size > 80 ? .title3.bold() : .subheadline.bold())
-                    .foregroundStyle(Color.ngText)
+                    .foregroundStyle(valueColor)
                     .monospacedDigit()
                     .minimumScaleFactor(0.62)
+                    .scaleEffect(flashScale)
                 Text(title)
                     .font(.caption.bold())
                     .foregroundStyle(Color.ngMuted)
@@ -150,6 +165,44 @@ struct RingMetricView: View {
         }
         .frame(width: size, height: size)
         .frame(maxWidth: .infinity)
+        .onAppear {
+            previousProgress = progress
+            withAnimation(.easeOut(duration: 0.9)) {
+                animatedProgress = clampedProgress(progress)
+            }
+        }
+        .onChange(of: progress) { _, newValue in
+            let delta = abs(newValue - previousProgress)
+            let duration = max(0.22, min(0.9, 0.95 - delta * 0.55))
+            previousProgress = newValue
+            withAnimation(.easeOut(duration: duration)) {
+                animatedProgress = clampedProgress(newValue)
+            }
+            withAnimation(.interpolatingSpring(stiffness: 260, damping: 15)) {
+                flashScale = 1.08
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
+                withAnimation(.easeOut(duration: 0.22)) {
+                    flashScale = 1
+                }
+            }
+        }
+    }
+
+    private var valueColor: Color {
+        if progress >= 0.9 { return .red }
+        if progress >= 0.7 { return .orange }
+        return Color.ngText
+    }
+
+    private func clampedProgress(_ value: Double) -> Double {
+        min(max(value, 0), 1)
+    }
+
+    private func metricColor(for value: Double) -> Color {
+        if value >= 0.9 { return .red }
+        if value >= 0.7 { return .orange }
+        return Color.ngPrimary
     }
 }
 

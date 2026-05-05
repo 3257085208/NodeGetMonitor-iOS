@@ -202,14 +202,6 @@ struct AgentDetailView: View {
                     valueFormatter: { NodeGetFormatters.percent($0) }
                 )
                 TrendMetricCard(
-                    title: "磁盘 %",
-                    value: NodeGetFormatters.percent(rows.last?.diskUsagePercent ?? currentSummary?.diskUsagePercent),
-                    values: rows.map { $0.diskUsagePercent },
-                    timestamps: times,
-                    color: .orange,
-                    valueFormatter: { NodeGetFormatters.percent($0) }
-                )
-                TrendMetricCard(
                     title: "下行",
                     value: NodeGetFormatters.speed(rows.last?.receiveSpeed ?? currentSummary?.receiveSpeed),
                     values: rows.map { $0.receiveSpeed },
@@ -234,31 +226,21 @@ struct AgentDetailView: View {
     }
 
     private func latencySection(title: String, rows: [TaskQueryResult], type: String) -> some View {
-        let stats = NodeGetStats.latencyStats(rows: rows, type: type)
+        let stats = NodeGetStats.latencyStats(rows: rows, type: type, buckets: 60)
+        let emptyName = type == "tcp_ping" ? "TCP Ping" : "Ping"
         return VStack(alignment: .leading, spacing: 14) {
             SectionCaption(text: title)
 
             if stats.isEmpty {
-                Text("暂无 \(type == "tcp_ping" ? "TCP Ping" : "Ping") 数据。请确认 Token 拥有 Task::Read 权限，并且服务端已有对应任务结果。")
+                Text("暂无 \(emptyName) 数据。请确认 Token 拥有 Task::Read 权限，并且服务端已有对应任务结果。")
                     .font(.subheadline)
                     .foregroundStyle(Color.ngMuted)
                     .padding(18)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .ngSoftCard()
             } else {
-                VStack(spacing: 16) {
-                    MiniLatencyChart(stats: stats)
-                        .frame(height: 160)
-                        .padding(12)
-                        .background(RoundedRectangle(cornerRadius: 14).fill(Color.white))
-                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.ngBorder, lineWidth: 1))
-
-                    ForEach(stats) { item in
-                        LatencyQualityRowView(stats: item, type: type)
-                    }
-                }
-                .padding(18)
-                .ngSoftCard()
+                LatencyDashboardPanel(stats: stats, type: type)
+                    .ngSoftCard()
             }
         }
     }
@@ -431,9 +413,14 @@ struct AgentDetailView: View {
 
         do {
             let rows = try await client.latestDynamicSummaries(token: token, uuids: [uuid])
-            liveSummary = rows.first
+            if let latest = rows.first {
+                liveSummary = latest
+                LocalTrendStore.shared.append(latest)
+            }
+            history = LocalTrendStore.shared.history(for: uuid)
         } catch {
             messages.append("实时：\(error.localizedDescription)")
+            history = LocalTrendStore.shared.history(for: uuid)
         }
 
         do {
@@ -449,11 +436,9 @@ struct AgentDetailView: View {
             // 元数据失败不阻断实时数据刷新
         }
 
-        switch await loadHistory(client: client, token: token) {
-        case .success(let rows):
-            history = rows
-        case .failure(let error):
-            messages.append("趋势：\(error.localizedDescription)")
+        if history.count < 3 {
+            _ = await loadRemoteHistoryIfAvailable(client: client, token: token)
+            history = LocalTrendStore.shared.history(for: uuid)
         }
 
         switch await loadLatency(client: client, token: token, type: "ping") {
@@ -473,39 +458,23 @@ struct AgentDetailView: View {
         extraMessage = messages.isEmpty ? "每 2 秒自动刷新于 \(NodeGetFormatters.clockTime(Date()))。" : "部分数据读取失败：" + messages.joined(separator: "；")
     }
 
-    private func loadHistory(client: NodeGetClient, token: String) async -> Result<[AgentSummary], Error> {
-        let now = Int64(Date().timeIntervalSince1970 * 1000)
+    @discardableResult
+    private func loadRemoteHistoryIfAvailable(client: NodeGetClient, token: String) async -> Bool {
         do {
             let rows = try await client.dynamicSummaryHistory(
                 token: token,
                 uuid: uuid,
-                limit: 240,
-                windowMilliseconds: 240_000
+                limit: 120,
+                windowMilliseconds: nil
             )
-            if !rows.isEmpty { return .success(rows) }
-
-            let fallbackRows = try await client.dynamicSummaryAverage(
-                token: token,
-                uuid: uuid,
-                timestampFrom: now - 240_000,
-                timestampTo: now,
-                points: 80
-            )
-            return .success(fallbackRows)
-        } catch {
-            do {
-                let fallbackRows = try await client.dynamicSummaryAverage(
-                    token: token,
-                    uuid: uuid,
-                    timestampFrom: now - 240_000,
-                    timestampTo: now,
-                    points: 80
-                )
-                return .success(fallbackRows)
-            } catch {
-                return .failure(error)
+            if !rows.isEmpty {
+                LocalTrendStore.shared.mergeRemote(rows, for: uuid)
+                return true
             }
+        } catch {
+            // 官方 StatusShow 主要使用前端本地采样构建 240 秒趋势；远端历史接口失败时静默降级，避免把 Invalid params 暴露给用户。
         }
+        return false
     }
 
     private func loadLatency(client: NodeGetClient, token: String, type: String) async -> Result<[TaskQueryResult], Error> {
@@ -518,6 +487,97 @@ struct AgentDetailView: View {
     }
 }
 
+struct LatencyDashboardPanel: View {
+    let stats: [LatencyStats]
+    let type: String
+
+    var body: some View {
+        VStack(spacing: 16) {
+            MiniLatencyChart(stats: stats)
+                .frame(height: 230)
+
+            Divider()
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                VStack(spacing: 12) {
+                    HStack {
+                        tableHeader("来源", width: 160, alignment: .leading)
+                        tableHeader("质量", width: 320, alignment: .leading)
+                        tableHeader("平均延迟", width: 88)
+                        tableHeader("抖动", width: 70)
+                        tableHeader("丢包率", width: 70)
+                    }
+
+                    ForEach(Array(stats.enumerated()), id: \.offset) { index, item in
+                        LatencyTableRow(stats: item, color: lineColor(index))
+                    }
+                }
+                .frame(minWidth: 720, alignment: .leading)
+            }
+        }
+        .padding(16)
+    }
+
+    private func tableHeader(_ text: String, width: CGFloat, alignment: Alignment = .trailing) -> some View {
+        Text(text)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Color.ngMuted)
+            .frame(width: width, alignment: alignment)
+    }
+
+    private func lineColor(_ index: Int) -> Color {
+        let colors: [Color] = [.red, .orange, .purple, .blue, .green, .cyan]
+        return colors[index % colors.count]
+    }
+}
+
+struct LatencyTableRow: View {
+    let stats: LatencyStats
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 9) {
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(color)
+                    .frame(width: 18, height: 3)
+                Text(stats.name)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.ngText)
+                    .lineLimit(1)
+            }
+            .frame(width: 160, alignment: .leading)
+
+            HStack(spacing: 3) {
+                ForEach(Array(stats.values.enumerated()), id: \.offset) { _, value in
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(qualityColor(for: value))
+                        .frame(width: 3, height: 18)
+                }
+            }
+            .frame(width: 320, alignment: .leading)
+
+            Text(NodeGetFormatters.milliseconds(stats.avg))
+                .frame(width: 88, alignment: .trailing)
+            Text(NodeGetFormatters.milliseconds(stats.jitter))
+                .frame(width: 70, alignment: .trailing)
+            Text(NodeGetFormatters.percent(stats.lossRate))
+                .frame(width: 70, alignment: .trailing)
+                .foregroundStyle(stats.lossRate > 20 ? Color.red : Color.ngText)
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(Color.ngText)
+    }
+
+    private func qualityColor(for value: Double?) -> Color {
+        guard let value else { return .red.opacity(0.8) }
+        if value <= 80 { return Color.ngPrimary }
+        if value <= 160 { return Color.orange }
+        if value <= 260 { return Color.orange.opacity(0.85) }
+        return Color.red.opacity(0.8)
+    }
+}
+
 struct MiniLatencyChart: View {
     let stats: [LatencyStats]
 
@@ -525,15 +585,44 @@ struct MiniLatencyChart: View {
 
     var body: some View {
         GeometryReader { geo in
-            let maxValue = max(stats.flatMap { $0.values.compactMap { $0 } }.max() ?? 1, 1)
+            let leftInset: CGFloat = 44
+            let bottomInset: CGFloat = 22
+            let plotWidth = max(1, geo.size.width - leftInset)
+            let plotHeight = max(1, geo.size.height - bottomInset)
+            let maxValue = niceMax(stats.flatMap { $0.values.compactMap { $0 } }.max() ?? 1)
+
             ZStack(alignment: .topLeading) {
+                ForEach(0..<5, id: \.self) { tick in
+                    let ratio = CGFloat(tick) / 4.0
+                    let y = plotHeight * ratio
+                    let value = maxValue * Double(4 - tick) / 4.0
+
+                    Text(NodeGetFormatters.milliseconds(value))
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(Color.ngMuted)
+                        .frame(width: leftInset - 6, alignment: .trailing)
+                        .position(x: (leftInset - 6) / 2, y: y + 2)
+
+                    Path { path in
+                        path.move(to: CGPoint(x: leftInset, y: y))
+                        path.addLine(to: CGPoint(x: geo.size.width, y: y))
+                    }
+                    .stroke(Color.ngBorder.opacity(tick == 4 ? 0.75 : 0.35), lineWidth: tick == 4 ? 1 : 0.6)
+                }
+
+                Path { path in
+                    path.move(to: CGPoint(x: leftInset, y: 0))
+                    path.addLine(to: CGPoint(x: leftInset, y: plotHeight))
+                }
+                .stroke(Color.ngMuted.opacity(0.55), lineWidth: 1)
+
                 ForEach(Array(stats.enumerated()), id: \.offset) { index, stat in
                     Path { path in
                         var moved = false
                         for (i, value) in stat.values.enumerated() {
                             guard let value else { continue }
-                            let x = geo.size.width * CGFloat(i) / CGFloat(max(stat.values.count - 1, 1))
-                            let y = geo.size.height - geo.size.height * CGFloat(value / maxValue)
+                            let x = leftInset + plotWidth * CGFloat(i) / CGFloat(max(stat.values.count - 1, 1))
+                            let y = plotHeight - plotHeight * CGFloat(value / maxValue)
                             let p = CGPoint(x: x, y: y)
                             if moved {
                                 path.addLine(to: p)
@@ -543,19 +632,26 @@ struct MiniLatencyChart: View {
                             }
                         }
                     }
-                    .stroke(color(index), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                    .stroke(color(index), style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+                }
+
+                if let first = timestamp(at: 0) {
+                    xAxisLabel(NodeGetFormatters.clockTime(milliseconds: first), x: leftInset, y: plotHeight + 14)
+                }
+                if let lastIndex = maxIndex, let last = timestamp(at: lastIndex) {
+                    xAxisLabel(NodeGetFormatters.clockTime(milliseconds: last), x: geo.size.width - 24, y: plotHeight + 14)
                 }
 
                 if let selected = selectedIndex {
-                    let x = xPosition(index: selected, width: geo.size.width)
+                    let x = xPosition(index: selected, leftInset: leftInset, width: plotWidth)
                     Path { path in
                         path.move(to: CGPoint(x: x, y: 0))
-                        path.addLine(to: CGPoint(x: x, y: geo.size.height))
+                        path.addLine(to: CGPoint(x: x, y: plotHeight))
                     }
                     .stroke(Color.ngMuted.opacity(0.45), lineWidth: 1)
 
                     ForEach(Array(stats.enumerated()), id: \.offset) { index, stat in
-                        if let point = pointPosition(stat: stat, index: selected, maxValue: maxValue, size: geo.size) {
+                        if let point = pointPosition(stat: stat, index: selected, maxValue: maxValue, leftInset: leftInset, plotWidth: plotWidth, plotHeight: plotHeight) {
                             Circle()
                                 .fill(color(index))
                                 .frame(width: 7, height: 7)
@@ -567,20 +663,41 @@ struct MiniLatencyChart: View {
                         time: NodeGetFormatters.clockTime(milliseconds: timestamp(at: selected)),
                         rows: tooltipRows(index: selected)
                     )
-                    .position(x: tooltipX(x, width: geo.size.width), y: 18)
+                    .position(x: tooltipX(x, width: geo.size.width), y: 38)
                 }
             }
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { gesture in
-                        selectedIndex = nearestIndex(locationX: gesture.location.x, width: geo.size.width)
+                        selectedIndex = nearestIndex(locationX: gesture.location.x - leftInset, width: plotWidth)
                     }
                     .onEnded { _ in
                         selectedIndex = nil
                     }
             )
         }
+    }
+
+    private var maxIndex: Int? {
+        let count = stats.map { $0.values.count }.max() ?? 0
+        return count > 0 ? count - 1 : nil
+    }
+
+    private func xAxisLabel(_ text: String, x: CGFloat, y: CGFloat) -> some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(Color.ngMuted)
+            .position(x: x, y: y)
+    }
+
+    private func niceMax(_ value: Double) -> Double {
+        let base = max(value, 1)
+        if base <= 100 { return 100 }
+        if base <= 200 { return 240 }
+        if base <= 320 { return 320 }
+        if base <= 500 { return 500 }
+        return ceil(base / 250) * 250
     }
 
     private func nearestIndex(locationX: CGFloat, width: CGFloat) -> Int {
@@ -590,16 +707,16 @@ struct MiniLatencyChart: View {
         return min(max(Int(round(ratio * CGFloat(count - 1))), 0), count - 1)
     }
 
-    private func xPosition(index: Int, width: CGFloat) -> CGFloat {
+    private func xPosition(index: Int, leftInset: CGFloat, width: CGFloat) -> CGFloat {
         let count = stats.map { $0.values.count }.max() ?? 0
-        guard count > 1 else { return width / 2 }
-        return width * CGFloat(index) / CGFloat(count - 1)
+        guard count > 1 else { return leftInset + width / 2 }
+        return leftInset + width * CGFloat(index) / CGFloat(count - 1)
     }
 
-    private func pointPosition(stat: LatencyStats, index: Int, maxValue: Double, size: CGSize) -> CGPoint? {
+    private func pointPosition(stat: LatencyStats, index: Int, maxValue: Double, leftInset: CGFloat, plotWidth: CGFloat, plotHeight: CGFloat) -> CGPoint? {
         guard index >= 0, index < stat.values.count, let value = stat.values[index] else { return nil }
-        let x = xPosition(index: index, width: size.width)
-        let y = size.height - size.height * CGFloat(value / maxValue)
+        let x = xPosition(index: index, leftInset: leftInset, width: plotWidth)
+        let y = plotHeight - plotHeight * CGFloat(value / maxValue)
         return CGPoint(x: x, y: y)
     }
 
@@ -620,7 +737,7 @@ struct MiniLatencyChart: View {
     }
 
     private func tooltipX(_ x: CGFloat, width: CGFloat) -> CGFloat {
-        min(max(x, 88), max(88, width - 88))
+        min(max(x, 96), max(96, width - 96))
     }
 
     private func color(_ index: Int) -> Color {

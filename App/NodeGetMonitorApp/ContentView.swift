@@ -305,7 +305,7 @@ struct AboutView: View {
                         .font(.headline)
                         .foregroundStyle(Color.ngMuted)
                     VStack(spacing: 12) {
-                        DetailInfoRow(title: "版本", value: "0.4.7")
+                        DetailInfoRow(title: "版本", value: "0.4.8")
                         DetailInfoRow(title: "刷新", value: "首页与详情页每 2 秒自动刷新")
                         DetailInfoRow(title: "构建", value: "Unsigned IPA 文件名会带版本号")
                     }

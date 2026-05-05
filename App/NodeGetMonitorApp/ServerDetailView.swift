@@ -195,6 +195,7 @@ struct ServerDetailView: View {
             agentUUIDs = uuids.sorted()
 
             let latestSummaries = try await client.latestDynamicSummaries(token: token, uuids: agentUUIDs)
+            LocalTrendStore.shared.append(contentsOf: latestSummaries)
             summaries = latestSummaries.sorted { $0.uuid < $1.uuid }
 
             do {
