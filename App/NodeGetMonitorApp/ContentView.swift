@@ -135,7 +135,7 @@ struct ContentView: View {
                     Text("Version")
                         .font(.headline)
                     Spacer()
-                    Text("0.4.2")
+                    Text("0.4.3")
                         .font(.headline)
                         .foregroundStyle(Color.ngMuted)
                 }

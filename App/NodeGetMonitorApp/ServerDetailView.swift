@@ -18,66 +18,7 @@ struct ServerDetailView: View {
     var body: some View {
         ZStack {
             AppBackgroundView()
-
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 18) {
-                    ServerSummaryHeaderView(
-                        title: profile.name,
-                        subtitle: profile.baseURL.absoluteString,
-                        statusText: serverMessage,
-                        agentCount: filteredSummaries.count,
-                        loading: isLoading
-                    ) {
-                        Task { await refreshAll() }
-                    }
-
-                    if filteredSummaries.isEmpty {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("暂无 Agent 数据")
-                                .font(.system(size: 24, weight: .black, design: .rounded))
-                            Text(isLoading ? "正在读取节点监控数据…" : "点击刷新后会读取真实节点数据。")
-                                .font(.subheadline)
-                                .foregroundStyle(Color.ngMuted)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(20)
-                        .ngSoftCard()
-                    } else {
-                        ForEach(filteredSummaries) { summary in
-                            NavigationLink {
-                                AgentDetailView(
-                                    server: profile,
-                                    uuid: summary.uuid,
-                                    summary: summary,
-                                    staticInfo: staticInfoByUUID[summary.uuid],
-                                    meta: metaByUUID[summary.uuid]
-                                )
-                            } label: {
-                                DashboardAgentCardView(
-                                    summary: summary,
-                                    staticInfo: staticInfoByUUID[summary.uuid],
-                                    meta: metaByUUID[summary.uuid]
-                                )
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-
-                    Button(role: .destructive) {
-                        showDeleteConfirmation = true
-                    } label: {
-                        Label("删除服务器", systemImage: "trash")
-                            .font(.title3.bold())
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                    }
-                    .foregroundStyle(.red)
-                    .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.white.opacity(0.75)))
-                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.ngBorder, lineWidth: 1))
-                    .padding(.top, 4)
-                }
-                .padding(20)
-            }
+            contentScroll
         }
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, prompt: "搜索节点…")
@@ -100,10 +41,103 @@ struct ServerDetailView: View {
         }
     }
 
+    private var contentScroll: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 18) {
+                headerView
+
+                if filteredSummaries.isEmpty {
+                    emptyView
+                } else {
+                    agentListView
+                }
+
+                deleteButton
+            }
+            .padding(20)
+        }
+    }
+
+    private var headerView: some View {
+        ServerSummaryHeaderView(
+            title: profile.name,
+            subtitle: profile.baseURL.absoluteString,
+            statusText: serverMessage,
+            agentCount: filteredSummaries.count,
+            loading: isLoading,
+            refreshAction: {
+                Task { await refreshAll() }
+            }
+        )
+    }
+
+    private var emptyView: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("暂无 Agent 数据")
+                .font(.system(size: 24, weight: .black, design: .rounded))
+            Text(isLoading ? "正在读取节点监控数据…" : "点击刷新后会读取真实节点数据。")
+                .font(.subheadline)
+                .foregroundStyle(Color.ngMuted)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .ngSoftCard()
+    }
+
+    private var agentListView: some View {
+        ForEach(filteredSummaries) { summary in
+            agentNavigationLink(for: summary)
+        }
+    }
+
+    private func agentNavigationLink(for summary: AgentSummary) -> some View {
+        let uuid = summary.uuid
+        let staticInfo = staticInfoByUUID[uuid]
+        let meta = metaByUUID[uuid]
+
+        return NavigationLink {
+            AgentDetailView(
+                server: profile,
+                uuid: uuid,
+                summary: summary,
+                staticInfo: staticInfo,
+                meta: meta
+            )
+        } label: {
+            DashboardAgentCardView(
+                summary: summary,
+                staticInfo: staticInfo,
+                meta: meta
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var deleteButton: some View {
+        Button(role: .destructive) {
+            showDeleteConfirmation = true
+        } label: {
+            Label("删除服务器", systemImage: "trash")
+                .font(.title3.bold())
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+        }
+        .foregroundStyle(.red)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.white.opacity(0.75))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.ngBorder, lineWidth: 1)
+        )
+        .padding(.top, 4)
+    }
+
     private var filteredSummaries: [AgentSummary] {
         let sorted = summaries.sorted { left, right in
-            let leftName = metaByUUID[left.uuid]?.name.nilIfEmpty ?? staticInfoByUUID[left.uuid]?.displayName ?? left.uuid
-            let rightName = metaByUUID[right.uuid]?.name.nilIfEmpty ?? staticInfoByUUID[right.uuid]?.displayName ?? right.uuid
+            let leftName = displayName(for: left.uuid)
+            let rightName = displayName(for: right.uuid)
             return leftName.localizedCaseInsensitiveCompare(rightName) == .orderedAscending
         }
 
@@ -111,18 +145,27 @@ struct ServerDetailView: View {
         guard !keyword.isEmpty else { return sorted }
 
         return sorted.filter { summary in
-            let info = staticInfoByUUID[summary.uuid]
-            let meta = metaByUUID[summary.uuid]
-            let candidates = [
-                summary.uuid,
-                meta?.name ?? "",
-                meta?.region ?? "",
-                info?.displayName ?? "",
-                info?.systemLine ?? "",
-                info?.cpuLine ?? ""
-            ]
-            return candidates.joined(separator: " ").localizedCaseInsensitiveContains(keyword)
+            searchTextBlob(for: summary.uuid).localizedCaseInsensitiveContains(keyword)
         }
+    }
+
+    private func displayName(for uuid: String) -> String {
+        if let name = metaByUUID[uuid]?.name.nilIfEmpty { return name }
+        if let name = staticInfoByUUID[uuid]?.displayName.nilIfEmpty { return name }
+        return uuid
+    }
+
+    private func searchTextBlob(for uuid: String) -> String {
+        let info = staticInfoByUUID[uuid]
+        let meta = metaByUUID[uuid]
+        return [
+            uuid,
+            meta?.name ?? "",
+            meta?.region ?? "",
+            info?.displayName ?? "",
+            info?.systemLine ?? "",
+            info?.cpuLine ?? ""
+        ].joined(separator: " ")
     }
 
     private func refreshAll() async {
@@ -140,8 +183,8 @@ struct ServerDetailView: View {
             let uuids = try await client.listAllAgentUUIDs(token: token)
             agentUUIDs = uuids.sorted()
 
-            summaries = try await client.latestDynamicSummaries(token: token, uuids: agentUUIDs)
-                .sorted { $0.uuid < $1.uuid }
+            let latestSummaries = try await client.latestDynamicSummaries(token: token, uuids: agentUUIDs)
+            summaries = latestSummaries.sorted { $0.uuid < $1.uuid }
 
             do {
                 staticInfoByUUID = try await client.latestStaticInfoMap(token: token, uuids: agentUUIDs)
@@ -155,9 +198,9 @@ struct ServerDetailView: View {
                 metaByUUID = [:]
             }
 
-            let hidden = metaByUUID.filter { $0.value.hidden }.map(\.key)
-            if !hidden.isEmpty {
-                summaries = summaries.filter { !hidden.contains($0.uuid) }
+            let hiddenUUIDs = Set(metaByUUID.filter { $0.value.hidden }.map(\.key))
+            if !hiddenUUIDs.isEmpty {
+                summaries = summaries.filter { !hiddenUUIDs.contains($0.uuid) }
             }
 
             serverMessage = "连接成功：\(hello)；读取到 \(agentUUIDs.count) 个 Agent 的实时监控、静态信息和元数据。"

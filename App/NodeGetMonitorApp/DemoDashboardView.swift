@@ -10,12 +10,12 @@ struct DemoDashboardView: View {
             usedMemory: 3_200_000_000,
             totalMemory: 8_000_000_000,
             availableMemory: 4_800_000_000,
+            uptime: 86_400,
+            processCount: 132,
             totalSpace: 80_000_000_000,
             availableSpace: 41_000_000_000,
             receiveSpeed: 8_500_000,
-            transmitSpeed: 1_200_000,
-            uptime: 86_400,
-            processCount: 132
+            transmitSpeed: 1_200_000
         ),
         AgentSummary(
             uuid: "demo-la-02",
@@ -25,12 +25,12 @@ struct DemoDashboardView: View {
             usedMemory: 6_100_000_000,
             totalMemory: 16_000_000_000,
             availableMemory: 9_900_000_000,
+            uptime: 172_800,
+            processCount: 221,
             totalSpace: 160_000_000_000,
             availableSpace: 92_000_000_000,
             receiveSpeed: 2_400_000,
-            transmitSpeed: 3_100_000,
-            uptime: 172_800,
-            processCount: 221
+            transmitSpeed: 3_100_000
         )
     ]
 
