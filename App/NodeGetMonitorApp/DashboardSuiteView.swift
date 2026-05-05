@@ -375,7 +375,7 @@ struct AdminServerOverviewCard: View {
                     .foregroundStyle(Color.ngMuted)
             }
             Spacer()
-            AdminSmallBadge(row.region.nilIfEmpty ?? "--")
+            AdminSmallBadge(row.region?.nilIfEmpty ?? "--")
         }
     }
 
@@ -468,7 +468,7 @@ struct AdminGlobalMapView: View {
             let client = NodeGetClient(baseURL: server.baseURL)
             let uuids = try await client.listAllAgentUUIDs(token: token)
             let metaMap = (try? await client.metadataMap(token: token, uuids: uuids)) ?? [:]
-            let grouped = Dictionary(grouping: metaMap.values) { $0.region.nilIfEmpty ?? "未设置" }
+            let grouped = Dictionary(grouping: metaMap.values) { $0.region?.nilIfEmpty ?? "未设置" }
             regions = grouped.map { ($0.key, $0.value.count) }.sorted { $0.0 < $1.0 }
             message = "读取到 \(regions.reduce(0) { $0 + $1.1 }) 台节点，\(regions.count) 个地区。"
         } catch { message = "读取失败：\(error.localizedDescription)" }
@@ -609,7 +609,7 @@ struct AdminBatchExecuteView: View {
 
 struct DashboardAboutNativeView: View {
     var body: some View {
-        AdminListPage(title: "关于", message: "NodeGet Monitor · v0.8.0", loading: false) {
+        AdminListPage(title: "关于", message: "NodeGet Monitor · v0.8.1", loading: false) {
             VStack(alignment: .leading, spacing: 12) {
                 Text("NodeGet Monitor")
                     .font(.title2.weight(.black))

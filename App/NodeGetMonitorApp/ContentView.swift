@@ -802,7 +802,7 @@ struct SettingsView: View {
             SectionCaption(text: "项目")
             VStack(spacing: 14) {
                 DetailInfoRow(title: "App", value: "NodeGet Monitor")
-                DetailInfoRow(title: "版本", value: "0.8.0")
+                DetailInfoRow(title: "版本", value: "0.8.1")
                 DetailInfoRow(title: "刷新", value: "监控与详情页每 1 秒自动刷新")
                 Button {
                     openURL(githubURL)
@@ -861,7 +861,7 @@ struct AboutView: View {
                         .font(.headline)
                         .foregroundStyle(Color.ngMuted)
                     VStack(spacing: 12) {
-                        DetailInfoRow(title: "版本", value: "0.8.0")
+                        DetailInfoRow(title: "版本", value: "0.8.1")
                         DetailInfoRow(title: "刷新", value: "首页与详情页每 1 秒自动刷新")
                         DetailInfoRow(title: "构建", value: "Unsigned IPA 文件名会带版本号")
                     }
