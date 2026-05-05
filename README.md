@@ -2,24 +2,28 @@
 
 A native SwiftUI monitor app for NodeGet.
 
-This repository is currently at the MVP stage. The first goal is to produce an unsigned IPA from GitHub Actions so it can be signed locally with an Apple ID signing tool and installed on a personal iPhone for testing.
+The current goal is to build unsigned IPAs through GitHub Actions, sign them locally with an Apple ID signing tool, and test them on a personal iPhone before preparing a formal App Store release.
 
-## Current features
+## Current version: 0.2.0
+
+### Features
 
 - Native SwiftUI shell
 - Demo dashboard
 - NodeGet JSON-RPC client
 - `nodeget-server_hello` connection test
+- Server profile storage on device
+- Token storage using iOS Keychain
+- Real Agent UUID list through `nodeget-server_list_all_agent_uuid`
+- Agent detail placeholder with UUID copy support
 - GitHub Actions core build
 - GitHub Actions unsigned IPA build
 
 ## Planned features
 
-- Server profile storage
-- Token storage using Keychain
-- Agent UUID list
 - Latest CPU, memory, disk, network, and GPU metrics
 - Historical charts
+- Better empty/error states
 - Anonymous opt-in usage statistics
 - App Store ready privacy policy and demo mode
 
@@ -61,7 +65,7 @@ Then sign the IPA with your Apple ID signing tool and install it on your iPhone.
 The intended app design is privacy-first:
 
 - NodeGet server URLs stay on device.
-- Tokens stay on device and will be stored in Keychain.
+- Tokens stay on device and are stored in Keychain.
 - Agent UUIDs and monitoring data are not uploaded to the app developer.
 - Anonymous usage statistics, if added, will be opt-in and will not include server URL, token, UUID, or monitoring data.
 

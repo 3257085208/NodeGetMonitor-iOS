@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 public final class NodeGetClient {
     private let baseURL: URL
@@ -68,6 +71,50 @@ public final class NodeGetClient {
             params: EmptyParams(),
             resultType: String.self
         )
+    }
+
+    public func listAllAgentUUIDs(token: String) async throws -> [String] {
+        try await call(
+            method: "nodeget-server_list_all_agent_uuid",
+            params: TokenParams(token: token),
+            resultType: [String].self
+        )
+    }
+
+    public func latestDynamicSummaries(
+        token: String,
+        uuids: [String],
+        fields: [String] = AgentSummary.defaultFields
+    ) async throws -> [AgentSummary] {
+        try await call(
+            method: "agent_dynamic_summary_multi_last_query",
+            params: AgentDynamicSummaryMultiLastQueryParams(
+                token: token,
+                uuids: uuids,
+                fields: fields
+            ),
+            resultType: [AgentSummary].self
+        )
+    }
+}
+
+public struct TokenParams: Encodable, Equatable {
+    public let token: String
+
+    public init(token: String) {
+        self.token = token
+    }
+}
+
+public struct AgentDynamicSummaryMultiLastQueryParams: Encodable, Equatable {
+    public let token: String
+    public let uuids: [String]
+    public let fields: [String]
+
+    public init(token: String, uuids: [String], fields: [String]) {
+        self.token = token
+        self.uuids = uuids
+        self.fields = fields
     }
 }
 

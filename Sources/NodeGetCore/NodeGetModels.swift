@@ -4,16 +4,24 @@ public struct ServerProfile: Identifiable, Codable, Equatable {
     public let id: UUID
     public var name: String
     public var baseURL: URL
+    public var createdAt: Date
 
-    public init(id: UUID = UUID(), name: String, baseURL: URL) {
+    public init(
+        id: UUID = UUID(),
+        name: String,
+        baseURL: URL,
+        createdAt: Date = Date()
+    ) {
         self.id = id
         self.name = name
         self.baseURL = baseURL
+        self.createdAt = createdAt
     }
 }
 
 public struct AgentSummary: Codable, Equatable, Identifiable {
     public var id: String { uuid }
+
     public let uuid: String
     public let timestamp: Int64?
     public let cpuUsage: Double?
@@ -25,6 +33,32 @@ public struct AgentSummary: Codable, Equatable, Identifiable {
     public let receiveSpeed: Double?
     public let transmitSpeed: Double?
     public let gpuUsage: Double?
+
+    public static let defaultFields = [
+        "cpu_usage",
+        "used_memory",
+        "total_memory",
+        "available_memory",
+        "total_space",
+        "available_space",
+        "receive_speed",
+        "transmit_speed",
+        "gpu_usage"
+    ]
+
+    enum CodingKeys: String, CodingKey {
+        case uuid
+        case timestamp
+        case cpuUsage = "cpu_usage"
+        case usedMemory = "used_memory"
+        case totalMemory = "total_memory"
+        case availableMemory = "available_memory"
+        case totalSpace = "total_space"
+        case availableSpace = "available_space"
+        case receiveSpeed = "receive_speed"
+        case transmitSpeed = "transmit_speed"
+        case gpuUsage = "gpu_usage"
+    }
 
     public init(
         uuid: String,

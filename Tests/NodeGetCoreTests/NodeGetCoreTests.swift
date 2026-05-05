@@ -35,4 +35,35 @@ final class NodeGetCoreTests: XCTestCase {
         XCTAssertFalse(NodeGetFormatters.bytes(1024).isEmpty)
         XCTAssertEqual(NodeGetFormatters.bytes(nil), "--")
     }
+
+    func testTokenParamsEncoding() throws {
+        let params = TokenParams(token: "demo_key:demo_secret")
+        let data = try JSONEncoder().encode(params)
+        let json = String(data: data, encoding: .utf8) ?? ""
+
+        XCTAssertTrue(json.contains("\"token\":\"demo_key:demo_secret\""))
+    }
+
+    func testAgentSummaryDecodingSnakeCase() throws {
+        let json = """
+        {
+          "uuid": "agent-1",
+          "timestamp": 1760000000000,
+          "cpu_usage": 12.5,
+          "used_memory": 1024,
+          "total_memory": 2048,
+          "receive_speed": 100.5,
+          "transmit_speed": 20.5,
+          "gpu_usage": 5.0
+        }
+        """.data(using: .utf8)!
+
+        let summary = try JSONDecoder().decode(AgentSummary.self, from: json)
+
+        XCTAssertEqual(summary.uuid, "agent-1")
+        XCTAssertEqual(summary.cpuUsage, 12.5)
+        XCTAssertEqual(summary.usedMemory, 1024)
+        XCTAssertEqual(summary.receiveSpeed, 100.5)
+        XCTAssertEqual(summary.gpuUsage, 5.0)
+    }
 }
