@@ -362,10 +362,10 @@ struct AdminAgentMetadataEditorView: View {
         self.row = row
         _name = State(initialValue: row.meta?.name ?? "")
         _region = State(initialValue: row.meta?.region ?? "")
-        _price = State(initialValue: row.meta?.price.map { String($0) } ?? "")
+        _price = State(initialValue: row.meta.map { $0.price > 0 ? String($0.price) : "" } ?? "")
         _priceUnit = State(initialValue: row.meta?.priceUnit ?? "USD")
-        _priceCycle = State(initialValue: row.meta?.priceCycle ?? "365")
-        _expireTime = State(initialValue: row.meta?.expireTime.map { String($0) } ?? "")
+        _priceCycle = State(initialValue: row.meta.map { String($0.priceCycle) } ?? "365")
+        _expireTime = State(initialValue: row.meta?.expireTime ?? "")
     }
 
     var body: some View {

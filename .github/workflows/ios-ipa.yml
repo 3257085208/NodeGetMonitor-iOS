@@ -6,7 +6,7 @@ on:
     branches: [ main ]
 
 env:
-  APP_VERSION: 0.7.0
+  APP_VERSION: 0.8.0
 
 jobs:
   build-ipa:

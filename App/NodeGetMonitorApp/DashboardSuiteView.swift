@@ -311,28 +311,7 @@ struct AdminServerOverviewListView: View {
         AdminListPage(title: "服务概览", message: message, loading: isLoading) {
             if rows.isEmpty && !isLoading { AdminEmptyCard(text: "暂无节点数据。") }
             ForEach(rows) { row in
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(row.name).font(.headline.weight(.black)).foregroundStyle(Color.ngText)
-                            Text(String(row.uuid.prefix(8)) + " · " + row.os).font(.caption.weight(.semibold)).foregroundStyle(Color.ngMuted)
-                        }
-                        Spacer()
-                        AdminSmallBadge(row.region.nilIfEmpty ?? "--")
-                    }
-                    MetricProgressLine(title: "CPU", value: row.cpu, tint: .cyan)
-                    MetricProgressLine(title: "RAM", value: row.memory, tint: Color.ngPrimary)
-                    MetricProgressLine(title: "Disk", value: row.disk, tint: .orange)
-                    HStack {
-                        Label(NodeGetFormatters.uptime(row.uptime), systemImage: "clock")
-                        Spacer()
-                        Text("↓ \(NodeGetFormatters.speed(row.rx))  ↑ \(NodeGetFormatters.speed(row.tx))")
-                    }
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.ngMuted)
-                }
-                .padding(16)
-                .ngSoftCard()
+                AdminServerOverviewCard(row: row)
             }
         }
         .task { await load() }
@@ -369,6 +348,48 @@ struct AdminServerOverviewListView: View {
     }
 }
 
+
+struct AdminServerOverviewCard: View {
+    let row: AdminServerOverviewRow
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header
+            MetricProgressLine(title: "CPU", value: row.cpu, tint: .cyan)
+            MetricProgressLine(title: "RAM", value: row.memory, tint: Color.ngPrimary)
+            MetricProgressLine(title: "Disk", value: row.disk, tint: .orange)
+            footer
+        }
+        .padding(16)
+        .ngSoftCard()
+    }
+
+    private var header: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(row.name)
+                    .font(.headline.weight(.black))
+                    .foregroundStyle(Color.ngText)
+                Text(row.subtitle)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.ngMuted)
+            }
+            Spacer()
+            AdminSmallBadge(row.region.nilIfEmpty ?? "--")
+        }
+    }
+
+    private var footer: some View {
+        HStack {
+            Label(NodeGetFormatters.uptime(row.uptime), systemImage: "clock")
+            Spacer()
+            Text("↓ \(NodeGetFormatters.speed(row.rx))  ↑ \(NodeGetFormatters.speed(row.tx))")
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(Color.ngMuted)
+    }
+}
+
 struct AdminServerOverviewRow: Identifiable {
     var id: String { uuid }
     let uuid: String
@@ -381,6 +402,10 @@ struct AdminServerOverviewRow: Identifiable {
     let uptime: Int64?
     let rx: Double?
     let tx: Double?
+
+    var subtitle: String {
+        String(uuid.prefix(8)) + " · " + os
+    }
 }
 
 struct MetricProgressLine: View {
@@ -584,7 +609,7 @@ struct AdminBatchExecuteView: View {
 
 struct DashboardAboutNativeView: View {
     var body: some View {
-        AdminListPage(title: "关于", message: "NodeGet Monitor · v0.7.0", loading: false) {
+        AdminListPage(title: "关于", message: "NodeGet Monitor · v0.8.0", loading: false) {
             VStack(alignment: .leading, spacing: 12) {
                 Text("NodeGet Monitor")
                     .font(.title2.weight(.black))

@@ -371,9 +371,3 @@ public struct JSWorkerRunParams: Encodable, Equatable {
     }
 }
 
-private extension String {
-    var nilIfEmpty: String? {
-        let s = trimmingCharacters(in: .whitespacesAndNewlines)
-        return s.isEmpty ? nil : s
-    }
-}
