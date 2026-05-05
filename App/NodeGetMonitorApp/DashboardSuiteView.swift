@@ -6,6 +6,7 @@ import WebKit
 struct DashboardSuiteView: View {
     @EnvironmentObject private var serverStore: ServerProfileStore
     @State private var selectedServerID: UUID?
+    @State private var message = "已融合 NodeGet Dashboard 的主菜单结构。常用功能优先走原生页，复杂页面可用内置 Web Dashboard 桥接打开。"
 
     private var selectedServer: ServerProfile? {
         if let selectedServerID, let match = serverStore.servers.first(where: { $0.id == selectedServerID }) {
@@ -19,9 +20,15 @@ struct DashboardSuiteView: View {
             ZStack {
                 AppBackgroundView()
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
+                    LazyVStack(alignment: .leading, spacing: 18) {
                         header
-                        content
+                        if serverStore.servers.isEmpty {
+                            emptyCard
+                        } else if let server = selectedServer {
+                            backendSwitcher
+                            quickDashboardBridge(server: server)
+                            dashboardSections(server: server)
+                        }
                     }
                     .padding(20)
                     .padding(.bottom, 32)
@@ -30,13 +37,11 @@ struct DashboardSuiteView: View {
             .navigationTitle("主控")
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
-                if selectedServerID == nil {
-                    selectedServerID = serverStore.servers.first?.id
-                }
+                if selectedServerID == nil { selectedServerID = serverStore.servers.first?.id }
             }
             .onChange(of: serverStore.servers.map(\.id)) { _, ids in
                 if let selectedServerID, ids.contains(selectedServerID) { return }
-                selectedServerID = ids.first
+                self.selectedServerID = ids.first
             }
         }
     }
@@ -46,7 +51,7 @@ struct DashboardSuiteView: View {
             Text("NodeGet Dashboard")
                 .font(.system(size: 34, weight: .black, design: .rounded))
                 .foregroundStyle(Color.ngText)
-            Text("把 NodeGet Dashboard 的主菜单融合进 App。常用功能走原生页，复杂功能通过内置 Web Dashboard 承接。")
+            Text(message)
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Color.ngMuted)
                 .fixedSize(horizontal: false, vertical: true)
@@ -56,17 +61,6 @@ struct DashboardSuiteView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        if serverStore.servers.isEmpty {
-            emptyCard
-        } else if let server = selectedServer {
-            backendSwitcher
-            fullDashboardCard(server: server)
-            dashboardMenu(server: server)
-        }
     }
 
     private var emptyCard: some View {
@@ -101,113 +95,116 @@ struct DashboardSuiteView: View {
         }
     }
 
-    private func fullDashboardCard(server: ServerProfile) -> some View {
-        NavigationLink {
-            DashboardWebBridgeView(server: server, route: "/dashboard/overview", title: "完整 Dashboard")
-        } label: {
-            HStack(spacing: 14) {
-                Image(systemName: "rectangle.on.rectangle.angled")
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(Color.ngPrimary)
-                    .frame(width: 42, height: 42)
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.ngPrimarySoft))
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("打开完整 Web Dashboard")
-                        .font(.headline.weight(.black))
-                        .foregroundStyle(Color.ngText)
-                    Text("自动注入当前主控 URL 和 Token，适合 WebShell、文件管理、扩展管理等复杂页面。")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.ngMuted)
-                        .fixedSize(horizontal: false, vertical: true)
+    private func quickDashboardBridge(server: ServerProfile) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionCaption(text: "完整 Dashboard")
+            NavigationLink {
+                DashboardWebBridgeView(server: server, route: "/dashboard/overview", title: "完整 Dashboard")
+            } label: {
+                HStack(spacing: 14) {
+                    Image(systemName: "rectangle.on.rectangle.angled")
+                        .font(.title2.weight(.bold))
+                        .foregroundStyle(Color.ngPrimary)
+                        .frame(width: 42, height: 42)
+                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.ngPrimarySoft))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("打开 Web Dashboard 兼容层")
+                            .font(.headline.weight(.black))
+                            .foregroundStyle(Color.ngText)
+                        Text("自动注入当前主控 URL 和 Token。适合 WebShell、文件管理、扩展详情等复杂页面。")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color.ngMuted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right").foregroundStyle(Color.ngMuted)
                 }
-                Spacer()
-                Image(systemName: "chevron.right").foregroundStyle(Color.ngMuted)
+                .padding(16)
+                .ngSoftCard()
             }
-            .padding(16)
-            .ngSoftCard()
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
     }
 
-    private func dashboardMenu(server: ServerProfile) -> some View {
+    private func dashboardSections(server: ServerProfile) -> some View {
         VStack(alignment: .leading, spacing: 18) {
-            DashboardMenuSection(title: "监控", items: [
-                DashboardMenuItem(title: "服务概览", subtitle: "列表模式、资源条、网络速率", icon: "server.rack", kind: .nativeAgentList),
-                DashboardMenuItem(title: "节点管理", subtitle: "Agent、metadata、节点设置", icon: "cpu", kind: .nativeAgentManage),
-                DashboardMenuItem(title: "全球地图", subtitle: "2D / 3D 地图", icon: "globe.asia.australia", kind: .web("/dashboard/map"))
-            ], server: server)
+            DashboardSectionView(title: "监控", modules: [
+                DashboardModule(title: "服务概览", subtitle: "资源概览、在线节点、主控统计", icon: "server.rack", destination: AnyView(AdminServerOverviewListView(server: server))),
+                DashboardModule(title: "节点管理", subtitle: "被控节点、metadata、节点设置", icon: "cpu", destination: AnyView(AdminAgentManageView(server: server))),
+                DashboardModule(title: "主控管理", subtitle: "Dashboard servers / backend 列表", icon: "rectangle.connected.to.line.below", destination: AnyView(DashboardWebBridgeView(server: server, route: "/dashboard/servers", title: "主控管理"))),
+                DashboardModule(title: "全球地图", subtitle: "区域分布、2D/3D 地图", icon: "globe.asia.australia", destination: AnyView(AdminGlobalMapView(server: server))),
+                DashboardModule(title: "节点列表 Web", subtitle: "Dashboard 原版节点列表", icon: "list.bullet.rectangle", destination: AnyView(DashboardWebBridgeView(server: server, route: "/dashboard/agents", title: "节点列表"))),
+                DashboardModule(title: "节点/主控管理", subtitle: "原版 node-manage 双 Tab", icon: "square.grid.2x2", destination: AnyView(DashboardWebBridgeView(server: server, route: "/dashboard/node-manage", title: "节点管理"))),
+            ])
 
-            DashboardMenuSection(title: "工具", items: [
-                DashboardMenuItem(title: "定时任务", subtitle: "Cron 创建、编辑、启停、删除", icon: "calendar.badge.clock", kind: .nativeCron),
-                DashboardMenuItem(title: "成本管理", subtitle: "资产、到期、续费、币种折算", icon: "creditcard", kind: .nativeBilling),
-                DashboardMenuItem(title: "脚本片段", subtitle: "script_snippet KV", icon: "doc.text", kind: .scriptSnippet),
-                DashboardMenuItem(title: "批量执行", subtitle: "选择节点并执行命令", icon: "terminal", kind: .nativeBatch)
-            ], server: server)
+            DashboardSectionView(title: "工具", modules: [
+                DashboardModule(title: "定时任务", subtitle: "Cron 创建、编辑、启停、删除", icon: "calendar.badge.clock", destination: AnyView(AdminCronListView(server: server))),
+                DashboardModule(title: "Cron 历史", subtitle: "任务历史、结果详情、过滤", icon: "clock.badge", destination: AnyView(DashboardWebBridgeView(server: server, route: "/dashboard/cron", title: "Cron 历史"))),
+                DashboardModule(title: "成本管理", subtitle: "资产、到期、续费、币种折算", icon: "creditcard", destination: AnyView(BillingOverviewView())),
+                DashboardModule(title: "脚本片段", subtitle: "script_snippet KV 增删改查", icon: "doc.text", destination: AnyView(AdminKVEntryView(server: server, namespace: "script_snippet"))),
+                DashboardModule(title: "脚本库 Web", subtitle: "原版 scripts 页面", icon: "scroll", destination: AnyView(DashboardWebBridgeView(server: server, route: "/dashboard/scripts", title: "脚本片段"))),
+                DashboardModule(title: "批量执行", subtitle: "选择节点并执行 shell 命令", icon: "terminal", destination: AnyView(AdminBatchExecuteView(server: server))),
+            ])
 
-            DashboardMenuSection(title: "高级", items: [
-                DashboardMenuItem(title: "Token", subtitle: "创建、导入、权限 JSON、删除", icon: "key.horizontal", kind: .nativeToken),
-                DashboardMenuItem(title: "KV 管理", subtitle: "Namespace / Key / Value", icon: "externaldrive", kind: .nativeKV),
-                DashboardMenuItem(title: "JS Worker", subtitle: "创建、编辑、运行、删除", icon: "curlybraces.square", kind: .nativeWorker),
-                DashboardMenuItem(title: "扩展管理", subtitle: "安装、列表、详情、文件", icon: "shippingbox", kind: .web("/dashboard/app-panel/list"))
-            ], server: server)
+            DashboardSectionView(title: "高级", modules: [
+                DashboardModule(title: "Token", subtitle: "创建、导入、权限 JSON、删除", icon: "key.horizontal", destination: AnyView(AdminTokenListView(server: server))),
+                DashboardModule(title: "创建 Token", subtitle: "Dashboard 原版创建向导", icon: "key.viewfinder", destination: AnyView(DashboardWebBridgeView(server: server, route: "/dashboard/tokenCeate", title: "创建 Token"))),
+                DashboardModule(title: "导入 Token", subtitle: "导入外部 Token", icon: "square.and.arrow.down", destination: AnyView(DashboardWebBridgeView(server: server, route: "/dashboard/tokenImport", title: "导入 Token"))),
+                DashboardModule(title: "KV 管理", subtitle: "Namespace / Key / Value", icon: "externaldrive", destination: AnyView(AdminKVNamespaceView(server: server))),
+                DashboardModule(title: "JS Worker", subtitle: "创建、编辑、运行、删除", icon: "curlybraces.square", destination: AnyView(AdminWorkersView(server: server))),
+                DashboardModule(title: "Worker 路由预览", subtitle: "JS Worker route preview", icon: "point.3.connected.trianglepath.dotted", destination: AnyView(DashboardWebBridgeView(server: server, route: "/dashboard/worker-route-preview", title: "Worker 路由预览"))),
+            ])
 
-            DashboardMenuSection(title: "节点详情工具", items: [
-                DashboardMenuItem(title: "运行状态", subtitle: "CPU / Memory / Disk / Network", icon: "waveform.path.ecg", kind: .nodePicker("/dashboard/node/%@/status")),
-                DashboardMenuItem(title: "延迟曲线", subtitle: "Ping / TCP Ping 历史", icon: "antenna.radiowaves.left.and.right", kind: .nodePicker("/dashboard/node/%@/latency")),
-                DashboardMenuItem(title: "流量统计", subtitle: "入站 / 出站 / 合计", icon: "arrow.up.arrow.down", kind: .nodePicker("/dashboard/node/%@/traffic")),
-                DashboardMenuItem(title: "Ping 检测", subtitle: "地图、直方图、表格", icon: "target", kind: .web("/dashboard/node-manage")),
-                DashboardMenuItem(title: "WebShell 终端", subtitle: "通过 Dashboard WebSocket 终端", icon: "terminal.fill", kind: .nodePicker("/dashboard/node/%@/webshell")),
-                DashboardMenuItem(title: "文件管理", subtitle: "节点文件操作", icon: "folder", kind: .nodePicker("/dashboard/node/%@/files")),
-                DashboardMenuItem(title: "节点设置", subtitle: "基本 / 配置 / 上游 / 存储 / 删除", icon: "gearshape", kind: .nodePicker("/dashboard/node/%@/setting"))
-            ], server: server)
+            DashboardSectionView(title: "应用扩展", modules: [
+                DashboardModule(title: "扩展管理", subtitle: "安装、列表、详情、文件", icon: "shippingbox", destination: AnyView(DashboardWebBridgeView(server: server, route: "/dashboard/app-panel/list", title: "扩展管理"))),
+                DashboardModule(title: "扩展面板", subtitle: "已安装扩展入口", icon: "puzzlepiece.extension", destination: AnyView(DashboardWebBridgeView(server: server, route: "/dashboard/app-panel", title: "扩展面板"))),
+            ])
 
-            DashboardMenuSection(title: "系统", items: [
-                DashboardMenuItem(title: "设置", subtitle: "App 设置与主控配置", icon: "gear", kind: .nativeSettings),
-                DashboardMenuItem(title: "日志", subtitle: "Dashboard 日志面板", icon: "doc.plaintext", kind: .web("/dashboard/logs")),
-                DashboardMenuItem(title: "关于", subtitle: "NodeGet Monitor / GitHub", icon: "info.circle", kind: .nativeAbout)
-            ], server: server)
+            DashboardSectionView(title: "节点详情工具", modules: [
+                DashboardModule(title: "运行状态", subtitle: "CPU / Memory / Disk / Network", icon: "waveform.path.ecg", destination: AnyView(AdminNodeToolPickerView(server: server, mode: .status))),
+                DashboardModule(title: "延迟曲线", subtitle: "Ping / TCP Ping 历史", icon: "antenna.radiowaves.left.and.right", destination: AnyView(AdminNodeToolPickerView(server: server, mode: .latency))),
+                DashboardModule(title: "流量统计", subtitle: "入站 / 出站 / 合计", icon: "arrow.up.arrow.down", destination: AnyView(AdminNodeToolPickerView(server: server, mode: .traffic))),
+                DashboardModule(title: "Ping 检测", subtitle: "地图、直方图、表格", icon: "target", destination: AnyView(AdminNodeToolPickerView(server: server, mode: .ping))),
+                DashboardModule(title: "WebShell 终端", subtitle: "Dashboard WebSocket 终端", icon: "terminal.fill", destination: AnyView(AdminNodeToolPickerView(server: server, mode: .webshell))),
+                DashboardModule(title: "文件管理", subtitle: "节点文件操作", icon: "folder", destination: AnyView(AdminNodeToolPickerView(server: server, mode: .files))),
+                DashboardModule(title: "节点设置", subtitle: "基本 / 配置 / 上游 / 存储 / 删除", icon: "gearshape", destination: AnyView(AdminNodeToolPickerView(server: server, mode: .setting))),
+                DashboardModule(title: "Docker", subtitle: "Dashboard Docker 预留页", icon: "shippingbox.fill", destination: AnyView(AdminNodeToolPickerView(server: server, mode: .docker))),
+                DashboardModule(title: "防火墙", subtitle: "Dashboard Firewall 预留页", icon: "shield.lefthalf.filled", destination: AnyView(AdminNodeToolPickerView(server: server, mode: .firewall))),
+                DashboardModule(title: "进程", subtitle: "Process 管理预留页", icon: "list.bullet.rectangle.portrait", destination: AnyView(AdminNodeToolPickerView(server: server, mode: .process))),
+                DashboardModule(title: "更新", subtitle: "Agent Update 预留页", icon: "arrow.triangle.2.circlepath", destination: AnyView(AdminNodeToolPickerView(server: server, mode: .update))),
+            ])
+
+            DashboardSectionView(title: "系统", modules: [
+                DashboardModule(title: "设置", subtitle: "App 设置与主控配置", icon: "gear", destination: AnyView(SettingsView())),
+                DashboardModule(title: "Dashboard 设置", subtitle: "General / Site 设置", icon: "switch.2", destination: AnyView(DashboardWebBridgeView(server: server, route: "/dashboard/settings", title: "Dashboard 设置"))),
+                DashboardModule(title: "通用设置", subtitle: "Dashboard general", icon: "slider.horizontal.3", destination: AnyView(DashboardWebBridgeView(server: server, route: "/dashboard/settings/general", title: "通用设置"))),
+                DashboardModule(title: "站点设置", subtitle: "Dashboard site", icon: "globe.badge.chevron.backward", destination: AnyView(DashboardWebBridgeView(server: server, route: "/dashboard/settings/site", title: "站点设置"))),
+                DashboardModule(title: "日志", subtitle: "Dashboard 日志面板", icon: "doc.plaintext", destination: AnyView(DashboardWebBridgeView(server: server, route: "/dashboard/logs", title: "日志"))),
+                DashboardModule(title: "关于", subtitle: "NodeGet Monitor / GitHub", icon: "info.circle", destination: AnyView(DashboardAboutNativeView())),
+            ])
         }
     }
-}
+}}
 
-struct DashboardMenuItem: Identifiable, Equatable {
+struct DashboardModule: Identifiable {
     let id = UUID()
     let title: String
     let subtitle: String
     let icon: String
-    let kind: DashboardDestinationKind
+    let destination: AnyView
 }
 
-enum DashboardDestinationKind: Equatable {
-    case nativeAgentList
-    case nativeAgentManage
-    case nativeBilling
-    case nativeCron
-    case nativeToken
-    case nativeKV
-    case nativeWorker
-    case nativeBatch
-    case nativeSettings
-    case nativeAbout
-    case scriptSnippet
-    case web(String)
-    case nodePicker(String)
-}
-
-struct DashboardMenuSection: View {
+struct DashboardSectionView: View {
     let title: String
-    let items: [DashboardMenuItem]
-    let server: ServerProfile
+    let modules: [DashboardModule]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionCaption(text: title)
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                ForEach(items) { item in
-                    NavigationLink {
-                        DashboardDestinationView(server: server, item: item)
-                    } label: {
-                        DashboardMenuCard(item: item)
+                ForEach(modules) { module in
+                    NavigationLink { module.destination } label: {
+                        DashboardModuleCard(module: module)
                     }
                     .buttonStyle(.plain)
                 }
@@ -216,22 +213,22 @@ struct DashboardMenuSection: View {
     }
 }
 
-struct DashboardMenuCard: View {
-    let item: DashboardMenuItem
+struct DashboardModuleCard: View {
+    let module: DashboardModule
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Image(systemName: item.icon)
+            Image(systemName: module.icon)
                 .font(.title2.weight(.bold))
                 .foregroundStyle(Color.ngPrimary)
                 .frame(width: 42, height: 42)
                 .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.ngPrimarySoft))
-            Text(item.title)
+            Text(module.title)
                 .font(.headline.weight(.black))
                 .foregroundStyle(Color.ngText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
-            Text(item.subtitle)
+            Text(module.subtitle)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Color.ngMuted)
                 .lineLimit(2)
@@ -243,98 +240,6 @@ struct DashboardMenuCard: View {
     }
 }
 
-struct DashboardDestinationView: View {
-    let server: ServerProfile
-    let item: DashboardMenuItem
-
-    var body: some View {
-        switch item.kind {
-        case .nativeAgentList:
-            ServerDetailView(profile: server)
-        case .nativeAgentManage:
-            AdminAgentManageView(server: server)
-        case .nativeBilling:
-            BillingOverviewView()
-        case .nativeCron:
-            AdminCronListView(server: server)
-        case .nativeToken:
-            AdminTokenListView(server: server)
-        case .nativeKV:
-            AdminKVNamespaceView(server: server)
-        case .nativeWorker:
-            AdminWorkersView(server: server)
-        case .nativeBatch:
-            AdminBatchExecuteView(server: server)
-        case .nativeSettings:
-            SettingsView()
-        case .nativeAbout:
-            DashboardAboutNativeView()
-        case .scriptSnippet:
-            AdminKVEntryView(server: server, namespace: "script_snippet")
-        case .web(let route):
-            DashboardWebBridgeView(server: server, route: route, title: item.title)
-        case .nodePicker(let template):
-            DashboardNodePickerView(server: server, title: item.title, routeTemplate: template)
-        }
-    }
-}
-
-struct DashboardNodePickerView: View {
-    let server: ServerProfile
-    let title: String
-    let routeTemplate: String
-
-    @State private var rows: [AdminAgentRow] = []
-    @State private var message = "正在读取节点…"
-    @State private var isLoading = false
-
-    var body: some View {
-        AdminListPage(title: title, message: message, loading: isLoading) {
-            if rows.isEmpty && !isLoading { AdminEmptyCard(text: "暂无节点。") }
-            ForEach(rows) { row in
-                NavigationLink {
-                    DashboardWebBridgeView(server: server, route: String(format: routeTemplate, row.uuid), title: "\(row.displayName) · \(title)")
-                } label: {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(row.displayName)
-                                .font(.headline.weight(.black))
-                                .foregroundStyle(Color.ngText)
-                            Text(row.uuid)
-                                .font(.caption.monospaced())
-                                .foregroundStyle(Color.ngMuted)
-                                .lineLimit(1)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right").foregroundStyle(Color.ngMuted)
-                    }
-                    .padding(16)
-                    .ngSoftCard()
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .task { await load() }
-        .refreshable { await load() }
-    }
-
-    @MainActor private func load() async {
-        guard let token = KeychainStore.shared.token(for: server.id) else { message = "未找到 Token"; return }
-        isLoading = true
-        defer { isLoading = false }
-        do {
-            let client = NodeGetClient(baseURL: server.baseURL)
-            let uuids = try await client.listAllAgentUUIDs(token: token).sorted()
-            let staticMap = (try? await client.latestStaticInfoMap(token: token, uuids: uuids)) ?? [:]
-            let metaMap = (try? await client.metadataMap(token: token, uuids: uuids)) ?? [:]
-            rows = uuids.map { uuid in AdminAgentRow(uuid: uuid, meta: metaMap[uuid], staticInfo: staticMap[uuid]) }
-            message = "选择一个节点打开 \(title)。"
-        } catch {
-            message = "读取失败：\(error.localizedDescription)"
-        }
-    }
-}
-
 struct DashboardWebBridgeView: View {
     let server: ServerProfile
     let route: String
@@ -343,7 +248,7 @@ struct DashboardWebBridgeView: View {
     @State private var token = ""
 
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
             #if canImport(WebKit)
             DashboardWebView(url: webURL, server: server, token: token)
             #else
@@ -412,9 +317,315 @@ private extension URL {
     }
 }
 
+struct AdminServerOverviewListView: View {
+    let server: ServerProfile
+    @State private var rows: [AdminServerOverviewRow] = []
+    @State private var message = "正在读取服务概览…"
+    @State private var isLoading = false
+
+    var body: some View {
+        AdminListPage(title: "服务概览", message: message, loading: isLoading) {
+            if rows.isEmpty && !isLoading { AdminEmptyCard(text: "暂无节点数据。") }
+            ForEach(rows) { row in
+                AdminServerOverviewCard(row: row)
+            }
+        }
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    @MainActor private func load() async {
+        guard let token = KeychainStore.shared.token(for: server.id) else { message = "未找到 Token"; return }
+        isLoading = true; defer { isLoading = false }
+        do {
+            let client = NodeGetClient(baseURL: server.baseURL)
+            let uuids = try await client.listAllAgentUUIDs(token: token).sorted()
+            let summaries = try await client.latestDynamicSummaries(token: token, uuids: uuids)
+            let staticMap = (try? await client.latestStaticInfoMap(token: token, uuids: uuids)) ?? [:]
+            let metaMap = (try? await client.metadataMap(token: token, uuids: uuids)) ?? [:]
+            rows = summaries.map { summary in
+                let info = staticMap[summary.uuid]
+                let meta = metaMap[summary.uuid]
+                return AdminServerOverviewRow(
+                    uuid: summary.uuid,
+                    name: meta?.name.nilIfEmpty ?? info?.displayName ?? summary.uuid,
+                    region: meta?.region,
+                    os: info?.systemLine.nilIfEmpty ?? "--",
+                    cpu: summary.cpuUsage ?? 0,
+                    memory: summary.memoryUsagePercent ?? 0,
+                    disk: summary.diskUsagePercent ?? 0,
+                    uptime: summary.uptime,
+                    rx: summary.receiveSpeed,
+                    tx: summary.transmitSpeed
+                )
+            }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            message = "读取到 \(rows.count) 个节点。"
+        } catch { message = "读取失败：\(error.localizedDescription)" }
+    }
+}
+
+
+struct AdminServerOverviewCard: View {
+    let row: AdminServerOverviewRow
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header
+            MetricProgressLine(title: "CPU", value: row.cpu, tint: .cyan)
+            MetricProgressLine(title: "RAM", value: row.memory, tint: Color.ngPrimary)
+            MetricProgressLine(title: "Disk", value: row.disk, tint: .orange)
+            footer
+        }
+        .padding(16)
+        .ngSoftCard()
+    }
+
+    private var header: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(row.name)
+                    .font(.headline.weight(.black))
+                    .foregroundStyle(Color.ngText)
+                Text(row.subtitle)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.ngMuted)
+            }
+            Spacer()
+            AdminSmallBadge(row.region?.nilIfEmpty ?? "--")
+        }
+    }
+
+    private var footer: some View {
+        HStack {
+            Label(NodeGetFormatters.uptime(row.uptime), systemImage: "clock")
+            Spacer()
+            Text("↓ \(NodeGetFormatters.speed(row.rx))  ↑ \(NodeGetFormatters.speed(row.tx))")
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(Color.ngMuted)
+    }
+}
+
+struct AdminServerOverviewRow: Identifiable {
+    var id: String { uuid }
+    let uuid: String
+    let name: String
+    let region: String?
+    let os: String
+    let cpu: Double
+    let memory: Double
+    let disk: Double
+    let uptime: Int64?
+    let rx: Double?
+    let tx: Double?
+
+    var subtitle: String {
+        String(uuid.prefix(8)) + " · " + os
+    }
+}
+
+struct MetricProgressLine: View {
+    let title: String
+    let value: Double
+    let tint: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(NodeGetFormatters.percent(value))
+            }
+            .font(.caption.weight(.bold))
+            .foregroundStyle(Color.ngMuted)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(tint.opacity(0.16))
+                    Capsule().fill(tint).frame(width: geo.size.width * CGFloat(min(max(value / 100, 0), 1)))
+                }
+            }
+            .frame(height: 6)
+        }
+    }
+}
+
+struct AdminGlobalMapView: View {
+    let server: ServerProfile
+    @State private var regions: [(String, Int)] = []
+    @State private var message = "正在读取地区分布…"
+    @State private var isLoading = false
+
+    var body: some View {
+        AdminListPage(title: "全球地图", message: message, loading: isLoading) {
+            VStack(alignment: .leading, spacing: 12) {
+                NavigationLink { DashboardWebBridgeView(server: server, route: "/dashboard/map", title: "全球地图") } label: {
+                    AdminActionCapsule(title: "打开 Web 2D/3D 地图", icon: "globe")
+                }
+                .buttonStyle(.plain)
+                ForEach(regions, id: \.0) { region, count in
+                    HStack {
+                        Text(region).font(.headline.weight(.black)).foregroundStyle(Color.ngText)
+                        Spacer()
+                        AdminSmallBadge("\(count) 台")
+                    }
+                    .padding(16)
+                    .ngSoftCard()
+                }
+            }
+        }
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    @MainActor private func load() async {
+        guard let token = KeychainStore.shared.token(for: server.id) else { message = "未找到 Token"; return }
+        isLoading = true; defer { isLoading = false }
+        do {
+            let client = NodeGetClient(baseURL: server.baseURL)
+            let uuids = try await client.listAllAgentUUIDs(token: token)
+            let metaMap = (try? await client.metadataMap(token: token, uuids: uuids)) ?? [:]
+            let grouped = Dictionary(grouping: metaMap.values) { $0.region.nilIfEmpty ?? "未设置" }
+            regions = grouped.map { ($0.key, $0.value.count) }.sorted { $0.0 < $1.0 }
+            message = "读取到 \(regions.reduce(0) { $0 + $1.1 }) 台节点，\(regions.count) 个地区。"
+        } catch { message = "读取失败：\(error.localizedDescription)" }
+    }
+}
+
+enum AdminNodeToolMode: String, CaseIterable, Identifiable {
+    case status = "运行状态"
+    case latency = "延迟曲线"
+    case traffic = "流量统计"
+    case webshell = "WebShell"
+    case files = "文件管理"
+    case setting = "节点设置"
+    var id: String { rawValue }
+    var routeSuffix: String {
+        switch self {
+        case .status: return "status"
+        case .latency: return "latency"
+        case .traffic: return "traffic"
+        case .webshell: return "webshell"
+        case .files: return "files"
+        case .setting: return "setting"
+        }
+    }
+}
+
+struct AdminNodeToolPickerView: View {
+    let server: ServerProfile
+    let mode: AdminNodeToolMode
+    @State private var rows: [AdminAgentRow] = []
+    @State private var message = "选择一个节点打开 \"\(AdminNodeToolMode.status.rawValue)\"。"
+    @State private var isLoading = false
+
+    var body: some View {
+        AdminListPage(title: mode.rawValue, message: message, loading: isLoading) {
+            if rows.isEmpty && !isLoading { AdminEmptyCard(text: "暂无节点。") }
+            ForEach(rows) { row in
+                NavigationLink {
+                    if mode == .status {
+                        AgentDetailView(server: server, uuid: row.uuid, summary: nil, staticInfo: nil, meta: nil)
+                    } else {
+                        DashboardWebBridgeView(server: server, route: "/dashboard/node/\(row.uuid)/\(mode.routeSuffix)", title: "\(row.displayName) · \(mode.rawValue)")
+                    }
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(row.displayName).font(.headline.weight(.black)).foregroundStyle(Color.ngText)
+                            Text(row.uuid).font(.caption.monospaced()).foregroundStyle(Color.ngMuted).lineLimit(1)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").foregroundStyle(Color.ngMuted)
+                    }
+                    .padding(16)
+                    .ngSoftCard()
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    @MainActor private func load() async {
+        guard let token = KeychainStore.shared.token(for: server.id) else { message = "未找到 Token"; return }
+        isLoading = true; defer { isLoading = false }
+        do {
+            let client = NodeGetClient(baseURL: server.baseURL)
+            let uuids = try await client.listAllAgentUUIDs(token: token).sorted()
+            let staticMap = (try? await client.latestStaticInfoMap(token: token, uuids: uuids)) ?? [:]
+            let metaMap = (try? await client.metadataMap(token: token, uuids: uuids)) ?? [:]
+            rows = uuids.map { uuid in AdminAgentRow(uuid: uuid, meta: metaMap[uuid], staticInfo: staticMap[uuid]) }
+            message = "选择一个节点打开 \(mode.rawValue)。"
+        } catch { message = "读取失败：\(error.localizedDescription)" }
+    }
+}
+
+struct AdminBatchExecuteView: View {
+    let server: ServerProfile
+    @State private var rows: [AdminAgentRow] = []
+    @State private var selected: Set<String> = []
+    @State private var shell = "bash"
+    @State private var code = "uname -a"
+    @State private var message = "批量执行会在目标 Agent 上运行命令，请确认目标和命令。"
+    @State private var isLoading = false
+
+    var body: some View {
+        AdminListPage(title: "批量执行", message: message, loading: isLoading) {
+            VStack(alignment: .leading, spacing: 12) {
+                AdminTextField(title: "解释器（bash / sh / cmd）", text: $shell)
+                AdminJSONEditor(title: "命令", text: $code)
+                HStack {
+                    Button("全选") { selected = Set(rows.map(\.uuid)) }.buttonStyle(.bordered)
+                    Button("清空") { selected.removeAll() }.buttonStyle(.bordered)
+                    Spacer()
+                    NavigationLink { DashboardWebBridgeView(server: server, route: "/dashboard/batch-exec", title: "批量执行 Web") } label: { AdminActionCapsule(title: "Web 高级执行", icon: "rectangle.on.rectangle") }.buttonStyle(.plain)
+                }
+                ForEach(rows) { row in
+                    Button { toggle(row.uuid) } label: {
+                        HStack {
+                            Image(systemName: selected.contains(row.uuid) ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(selected.contains(row.uuid) ? Color.ngPrimary : Color.ngMuted)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(row.displayName).font(.headline.weight(.black)).foregroundStyle(Color.ngText)
+                                Text(row.uuid).font(.caption.monospaced()).foregroundStyle(Color.ngMuted).lineLimit(1)
+                            }
+                            Spacer()
+                        }
+                        .padding(14)
+                        .ngSoftCard()
+                    }.buttonStyle(.plain)
+                }
+                Button { message = "已选择 \(selected.count) 个节点。原生命令下发将在 v0.7.x 接入 task_create_task_blocking；当前可点 Web 高级执行使用完整 Dashboard 批量执行。" } label: {
+                    AdminPrimaryButtonLabel(title: "确认执行", icon: "play.circle")
+                }
+            }
+        }
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    private func toggle(_ uuid: String) {
+        if selected.contains(uuid) { selected.remove(uuid) } else { selected.insert(uuid) }
+    }
+
+    @MainActor private func load() async {
+        guard let token = KeychainStore.shared.token(for: server.id) else { message = "未找到 Token"; return }
+        isLoading = true; defer { isLoading = false }
+        do {
+            let client = NodeGetClient(baseURL: server.baseURL)
+            let uuids = try await client.listAllAgentUUIDs(token: token).sorted()
+            let staticMap = (try? await client.latestStaticInfoMap(token: token, uuids: uuids)) ?? [:]
+            let metaMap = (try? await client.metadataMap(token: token, uuids: uuids)) ?? [:]
+            rows = uuids.map { uuid in AdminAgentRow(uuid: uuid, meta: metaMap[uuid], staticInfo: staticMap[uuid]) }
+            message = "读取到 \(rows.count) 个节点。"
+        } catch { message = "读取失败：\(error.localizedDescription)" }
+    }
+}
+
 struct DashboardAboutNativeView: View {
     var body: some View {
-        AdminListPage(title: "关于", message: "NodeGet Monitor · v0.8.2", loading: false) {
+        AdminListPage(title: "关于", message: "NodeGet Monitor · v0.9.0", loading: false) {
             VStack(alignment: .leading, spacing: 12) {
                 Text("NodeGet Monitor")
                     .font(.title2.weight(.black))

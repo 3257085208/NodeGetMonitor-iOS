@@ -4,7 +4,7 @@ A native SwiftUI monitor app for NodeGet.
 
 The current goal is to build unsigned IPAs through GitHub Actions, sign them locally with an Apple ID signing tool, and test them on a personal iPhone before preparing a formal App Store release.
 
-## Current version: 0.8.2
+## Current version: 0.9.0
 
 ### Features
 
@@ -57,7 +57,7 @@ Actions -> Build Unsigned IPA -> Run workflow
 After the workflow finishes, download the artifact named:
 
 ```text
-NodeGetMonitor-v0.8.2-unsigned-ipa
+NodeGetMonitor-v0.9.0-unsigned-ipa
 ```
 
 Then sign the IPA with your Apple ID signing tool and install it on your iPhone.
@@ -81,6 +81,6 @@ MIT
 Adds dashboard detail modules for dynamic summary history, Task ping/tcp_ping quality, KV metadata billing fields, online strip, and trend placeholders.
 
 
-## v0.8.2
+## v0.9.0
 
 Adds the first native Control tab, based on the uploaded NodeGet-board project. It includes backend status, Agent management, Token list, Crontab list, KV namespace browsing, JS Worker/script browsing, and a dashboard-style feature entry layout. Destructive operations are intentionally read-only in this first native control release.
