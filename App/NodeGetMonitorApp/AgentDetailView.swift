@@ -344,27 +344,23 @@ struct AgentDetailView: View {
 
         let client = NodeGetClient(baseURL: server.baseURL)
 
-        async let historyResult: Result<[AgentSummary], Error> = loadHistory(client: client, token: token)
-        async let pingResult: Result<[TaskQueryResult], Error> = loadLatency(client: client, token: token, type: "ping")
-        async let tcpResult: Result<[TaskQueryResult], Error> = loadLatency(client: client, token: token, type: "tcp_ping")
-
         var messages: [String] = []
 
-        switch await historyResult {
+        switch await loadHistory(client: client, token: token) {
         case .success(let rows):
             history = rows
         case .failure(let error):
             messages.append("趋势：\(error.localizedDescription)")
         }
 
-        switch await pingResult {
+        switch await loadLatency(client: client, token: token, type: "ping") {
         case .success(let rows):
             pingRows = rows
         case .failure(let error):
             messages.append("Ping：\(error.localizedDescription)")
         }
 
-        switch await tcpResult {
+        switch await loadLatency(client: client, token: token, type: "tcp_ping") {
         case .success(let rows):
             tcpRows = rows
         case .failure(let error):

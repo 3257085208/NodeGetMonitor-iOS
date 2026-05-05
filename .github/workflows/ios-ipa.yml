@@ -14,16 +14,22 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Show Xcode version
-        run: xcodebuild -version
+        run: |
+          xcodebuild -version
+          swift --version
 
       - name: Install XcodeGen
-        run: brew install xcodegen
+        run: |
+          brew update
+          brew install xcodegen
+          xcodegen --version
 
       - name: Generate Xcode project
         run: xcodegen generate
 
       - name: Build iOS app without signing
         run: |
+          set -o pipefail
           xcodebuild \
             -project NodeGetMonitor.xcodeproj \
             -scheme NodeGetMonitor \
@@ -31,14 +37,24 @@ jobs:
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO \
-            clean build
+            CODE_SIGNING_REQUIRED=NO \
+            AD_HOC_CODE_SIGNING_ALLOWED=NO \
+            clean build 2>&1 | tee xcodebuild.log
+
+      - name: Upload xcodebuild log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: xcodebuild.log
+          if-no-files-found: ignore
 
       - name: Package unsigned IPA
         run: |
           APP_PATH="build/Build/Products/Release-iphoneos/NodeGetMonitor.app"
           if [ ! -d "$APP_PATH" ]; then
             echo "App bundle not found at $APP_PATH"
-            find build -name "*.app" -maxdepth 6 -print
+            find build -maxdepth 8 -name "*.app" -print
             exit 1
           fi
           rm -rf Payload NodeGetMonitor-unsigned.ipa

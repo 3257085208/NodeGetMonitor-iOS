@@ -1,4 +1,8 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
+
 
 extension Color {
     static let ngBackground = Color(uiColor: UIColor(red: 246/255, green: 247/255, blue: 251/255, alpha: 1))
