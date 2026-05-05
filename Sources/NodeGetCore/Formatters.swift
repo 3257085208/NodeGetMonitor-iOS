@@ -8,10 +8,11 @@ public enum NodeGetFormatters {
 
     public static func bytes(_ value: Int64?) -> String {
         guard let value else { return "--" }
+        if value == 0 { return "0 KB" }
         let formatter = ByteCountFormatter()
         formatter.allowedUnits = [.useKB, .useMB, .useGB, .useTB]
         formatter.countStyle = .binary
-        return formatter.string(fromByteCount: value)
+        return formatter.string(fromByteCount: value).replacingOccurrences(of: "Zero", with: "0")
     }
 
     public static func speed(_ value: Double?) -> String {

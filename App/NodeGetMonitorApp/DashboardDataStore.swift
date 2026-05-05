@@ -58,7 +58,7 @@ final class ServerDashboardDataStore: ObservableObject {
             }
 
             lastRefresh = Date()
-            serverMessage = "连接成功：\(hello)；读取到 \(sortedUUIDs.count) 个 Agent。每 2 秒自动刷新于 \(NodeGetFormatters.clockTime(Date()))。"
+            serverMessage = "连接成功：\(hello)；读取到 \(sortedUUIDs.count) 个 Agent。每 1 秒自动刷新于 \(NodeGetFormatters.clockTime(Date()))。"
         } catch {
             serverMessage = "刷新失败：\(error.localizedDescription)"
         }

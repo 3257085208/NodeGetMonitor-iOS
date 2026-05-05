@@ -53,7 +53,7 @@ struct AgentDetailView: View {
         .task(id: uuid) {
             await loadExtraData()
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
                 guard !Task.isCancelled else { break }
                 await loadExtraData(showLoading: false)
             }
@@ -455,7 +455,7 @@ struct AgentDetailView: View {
             messages.append("TCP Ping：\(error.localizedDescription)")
         }
 
-        extraMessage = messages.isEmpty ? "每 2 秒自动刷新于 \(NodeGetFormatters.clockTime(Date()))。" : "部分数据读取失败：" + messages.joined(separator: "；")
+        extraMessage = messages.isEmpty ? "每 1 秒自动刷新于 \(NodeGetFormatters.clockTime(Date()))。" : "部分数据读取失败：" + messages.joined(separator: "；")
     }
 
     @discardableResult
@@ -491,9 +491,16 @@ struct LatencyDashboardPanel: View {
     let stats: [LatencyStats]
     let type: String
 
+    @State private var hiddenNames: Set<String> = []
+
+    private var visibleStats: [LatencyStats] {
+        let filtered = stats.filter { !hiddenNames.contains($0.name) }
+        return filtered.isEmpty ? stats : filtered
+    }
+
     var body: some View {
         VStack(spacing: 16) {
-            MiniLatencyChart(stats: stats)
+            MiniLatencyChart(stats: visibleStats)
                 .frame(height: 230)
 
             Divider()
@@ -509,13 +516,34 @@ struct LatencyDashboardPanel: View {
                     }
 
                     ForEach(Array(stats.enumerated()), id: \.offset) { index, item in
-                        LatencyTableRow(stats: item, color: lineColor(index))
+                        LatencyTableRow(
+                            stats: item,
+                            color: lineColor(index),
+                            isHidden: hiddenNames.contains(item.name)
+                        )
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            toggle(item.name)
+                        }
                     }
                 }
                 .frame(minWidth: 720, alignment: .leading)
             }
+
+            Text("点击上方来源行可显示 / 隐藏对应线路。")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(Color.ngMuted)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(16)
+    }
+
+    private func toggle(_ name: String) {
+        if hiddenNames.contains(name) {
+            hiddenNames.remove(name)
+        } else if hiddenNames.count < max(0, stats.count - 1) {
+            hiddenNames.insert(name)
+        }
     }
 
     private func tableHeader(_ text: String, width: CGFloat, alignment: Alignment = .trailing) -> some View {
@@ -534,16 +562,17 @@ struct LatencyDashboardPanel: View {
 struct LatencyTableRow: View {
     let stats: LatencyStats
     let color: Color
+    let isHidden: Bool
 
     var body: some View {
         HStack(spacing: 0) {
             HStack(spacing: 9) {
                 RoundedRectangle(cornerRadius: 1.5)
-                    .fill(color)
+                    .fill(isHidden ? Color.ngMuted.opacity(0.35) : color)
                     .frame(width: 18, height: 3)
                 Text(stats.name)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.ngText)
+                    .foregroundStyle(isHidden ? Color.ngMuted.opacity(0.55) : Color.ngText)
                     .lineLimit(1)
             }
             .frame(width: 160, alignment: .leading)
@@ -551,7 +580,7 @@ struct LatencyTableRow: View {
             HStack(spacing: 3) {
                 ForEach(Array(stats.values.enumerated()), id: \.offset) { _, value in
                     RoundedRectangle(cornerRadius: 2)
-                        .fill(qualityColor(for: value))
+                        .fill(isHidden ? Color.ngBorder : qualityColor(for: value))
                         .frame(width: 3, height: 18)
                 }
             }
@@ -563,10 +592,11 @@ struct LatencyTableRow: View {
                 .frame(width: 70, alignment: .trailing)
             Text(NodeGetFormatters.percent(stats.lossRate))
                 .frame(width: 70, alignment: .trailing)
-                .foregroundStyle(stats.lossRate > 20 ? Color.red : Color.ngText)
+                .foregroundStyle(isHidden ? Color.ngMuted.opacity(0.55) : (stats.lossRate > 20 ? Color.red : Color.ngText))
         }
         .font(.caption.weight(.semibold))
-        .foregroundStyle(Color.ngText)
+        .foregroundStyle(isHidden ? Color.ngMuted.opacity(0.55) : Color.ngText)
+        .opacity(isHidden ? 0.55 : 1)
     }
 
     private func qualityColor(for value: Double?) -> Color {
