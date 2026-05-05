@@ -10,6 +10,9 @@ struct AgentDetailView: View {
     let staticInfo: StaticAgentInfo?
     let meta: AgentMeta?
 
+    @State private var liveSummary: AgentSummary?
+    @State private var liveStaticInfo: StaticAgentInfo?
+    @State private var liveMeta: AgentMeta?
     @State private var copyMessage = ""
     @State private var history: [AgentSummary] = []
     @State private var pingRows: [TaskQueryResult] = []
@@ -48,11 +51,27 @@ struct AgentDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await loadExtraData()
+            await autoRefreshLoop()
+        }
+        .refreshable {
+            await loadExtraData()
         }
     }
 
+    private var currentSummary: AgentSummary? {
+        liveSummary ?? summary
+    }
+
+    private var currentStaticInfo: StaticAgentInfo? {
+        liveStaticInfo ?? staticInfo
+    }
+
+    private var currentMeta: AgentMeta? {
+        liveMeta ?? meta
+    }
+
     private var displayName: String {
-        meta?.name.nilIfEmpty ?? staticInfo?.displayName ?? shortUUID(uuid)
+        currentMeta?.name.nilIfEmpty ?? currentStaticInfo?.displayName ?? shortUUID(uuid)
     }
 
     private var agentHeader: some View {
@@ -64,7 +83,7 @@ struct AgentDetailView: View {
                             .fill(isOnline ? Color.ngPrimary : Color.red)
                             .frame(width: 12, height: 12)
 
-                        if let region = meta?.region.nilIfEmpty {
+                        if let region = currentMeta?.region.nilIfEmpty {
                             Text(region.uppercased())
                                 .font(.caption2.weight(.black))
                                 .foregroundStyle(Color.ngMuted)
@@ -79,7 +98,7 @@ struct AgentDetailView: View {
                             .lineLimit(1)
                     }
 
-                    Text(staticInfo?.systemLine ?? "未知系统")
+                    Text(currentStaticInfo?.systemLine ?? "未知系统")
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Color.ngMuted)
                         .lineLimit(2)
@@ -95,13 +114,20 @@ struct AgentDetailView: View {
                     .background(Capsule().fill(Color.ngPrimarySoft))
             }
 
-            if let summary {
-                HStack(spacing: 12) {
-                    RingMetricView(title: "CPU", value: NodeGetFormatters.percent(summary.cpuUsage), progress: progress(summary.cpuUsage))
-                    RingMetricView(title: "内存", value: NodeGetFormatters.percent(summary.memoryUsagePercent), progress: progress(summary.memoryUsagePercent))
-                    RingMetricView(title: "磁盘", value: NodeGetFormatters.percent(summary.diskUsagePercent), progress: progress(summary.diskUsagePercent))
-                    RingMetricView(title: "Swap", value: NodeGetFormatters.percent(summary.swapUsagePercent), progress: progress(summary.swapUsagePercent))
+            if let summary = currentSummary {
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(), spacing: 12),
+                        GridItem(.flexible(), spacing: 12)
+                    ],
+                    spacing: 14
+                ) {
+                    RingMetricView(title: "CPU", value: NodeGetFormatters.percent(summary.cpuUsage), progress: progress(summary.cpuUsage), size: 84)
+                    RingMetricView(title: "内存", value: NodeGetFormatters.percent(summary.memoryUsagePercent), progress: progress(summary.memoryUsagePercent), size: 84)
+                    RingMetricView(title: "磁盘", value: NodeGetFormatters.percent(summary.diskUsagePercent), progress: progress(summary.diskUsagePercent), size: 84)
+                    RingMetricView(title: "Swap", value: NodeGetFormatters.percent(summary.swapUsagePercent), progress: progress(summary.swapUsagePercent), size: 84)
                 }
+                .frame(maxWidth: .infinity)
             }
         }
         .padding(20)
@@ -113,16 +139,16 @@ struct AgentDetailView: View {
             SectionCaption(text: "资源")
             VStack(spacing: 14) {
                 HStack(spacing: 14) {
-                    SmallMetricColumn(title: "CPU", value: NodeGetFormatters.percent(summary?.cpuUsage))
+                    SmallMetricColumn(title: "CPU", value: NodeGetFormatters.percent(currentSummary?.cpuUsage))
                     SmallMetricColumn(title: "负载", value: loadText)
                 }
                 HStack(spacing: 14) {
-                    SmallMetricColumn(title: "内存", value: summary?.memoryUsedText ?? "--")
-                    SmallMetricColumn(title: "Swap", value: summary?.swapUsedText ?? "--")
+                    SmallMetricColumn(title: "内存", value: currentSummary?.memoryUsedText ?? "--")
+                    SmallMetricColumn(title: "Swap", value: currentSummary?.swapUsedText ?? "--")
                 }
                 HStack(spacing: 14) {
-                    SmallMetricColumn(title: "磁盘", value: summary?.diskUsedText ?? "--")
-                    SmallMetricColumn(title: "磁盘可用", value: NodeGetFormatters.bytes(summary?.availableSpace))
+                    SmallMetricColumn(title: "磁盘", value: currentSummary?.diskUsedText ?? "--")
+                    SmallMetricColumn(title: "磁盘可用", value: NodeGetFormatters.bytes(currentSummary?.availableSpace))
                 }
             }
             .padding(18)
@@ -152,10 +178,10 @@ struct AgentDetailView: View {
             }
 
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                TrendMetricCard(title: "CPU %", value: NodeGetFormatters.percent(history.last?.cpuUsage ?? summary?.cpuUsage), values: history.map { $0.cpuUsage }, color: .blue)
-                TrendMetricCard(title: "内存 %", value: NodeGetFormatters.percent(history.last?.memoryUsagePercent ?? summary?.memoryUsagePercent), values: history.map { $0.memoryUsagePercent }, color: Color.ngPrimary)
-                TrendMetricCard(title: "下行", value: NodeGetFormatters.speed(history.last?.receiveSpeed ?? summary?.receiveSpeed), values: history.map { $0.receiveSpeed }, color: .purple)
-                TrendMetricCard(title: "上行", value: NodeGetFormatters.speed(history.last?.transmitSpeed ?? summary?.transmitSpeed), values: history.map { $0.transmitSpeed }, color: .orange)
+                TrendMetricCard(title: "CPU %", value: NodeGetFormatters.percent(history.last?.cpuUsage ?? currentSummary?.cpuUsage), values: history.map { $0.cpuUsage }, color: .blue)
+                TrendMetricCard(title: "内存 %", value: NodeGetFormatters.percent(history.last?.memoryUsagePercent ?? currentSummary?.memoryUsagePercent), values: history.map { $0.memoryUsagePercent }, color: Color.ngPrimary)
+                TrendMetricCard(title: "下行", value: NodeGetFormatters.speed(history.last?.receiveSpeed ?? currentSummary?.receiveSpeed), values: history.map { $0.receiveSpeed }, color: .purple)
+                TrendMetricCard(title: "上行", value: NodeGetFormatters.speed(history.last?.transmitSpeed ?? currentSummary?.transmitSpeed), values: history.map { $0.transmitSpeed }, color: .orange)
             }
 
             Text(extraMessage)
@@ -199,26 +225,26 @@ struct AgentDetailView: View {
             SectionCaption(text: "系统与网络")
             VStack(spacing: 18) {
                 VStack(spacing: 10) {
-                    DetailInfoRow(title: "主机名", value: staticInfo?.system?.systemHostName ?? "--")
-                    DetailInfoRow(title: "操作系统", value: staticInfo?.system?.systemOsLongVersion ?? staticInfo?.system?.systemName ?? "--")
-                    DetailInfoRow(title: "内核", value: staticInfo?.system?.systemKernelVersion ?? staticInfo?.system?.systemKernel ?? "--")
-                    DetailInfoRow(title: "CPU 架构", value: staticInfo?.system?.arch ?? "--")
+                    DetailInfoRow(title: "主机名", value: currentStaticInfo?.system?.systemHostName ?? "--")
+                    DetailInfoRow(title: "操作系统", value: currentStaticInfo?.system?.systemOsLongVersion ?? currentStaticInfo?.system?.systemName ?? "--")
+                    DetailInfoRow(title: "内核", value: currentStaticInfo?.system?.systemKernelVersion ?? currentStaticInfo?.system?.systemKernel ?? "--")
+                    DetailInfoRow(title: "CPU 架构", value: currentStaticInfo?.system?.arch ?? "--")
                     DetailInfoRow(title: "虚拟化", value: virtText)
-                    DetailInfoRow(title: "CPU 型号", value: staticInfo?.cpu?.perCore.first?.brand ?? "--")
+                    DetailInfoRow(title: "CPU 型号", value: currentStaticInfo?.cpu?.perCore.first?.brand ?? "--")
                     DetailInfoRow(title: "核心", value: coreText)
                 }
 
                 Divider()
 
                 VStack(spacing: 10) {
-                    DetailInfoRow(title: "累计接收", value: NodeGetFormatters.bytes(summary?.totalReceived))
-                    DetailInfoRow(title: "累计发送", value: NodeGetFormatters.bytes(summary?.totalTransmitted))
-                    DetailInfoRow(title: "磁盘读", value: NodeGetFormatters.speed(summary?.readSpeed))
-                    DetailInfoRow(title: "磁盘写", value: NodeGetFormatters.speed(summary?.writeSpeed))
-                    DetailInfoRow(title: "进程数", value: summary?.processCount.map(String.init) ?? "--")
-                    DetailInfoRow(title: "TCP / UDP", value: "\(summary?.tcpConnections.map(String.init) ?? "--") / \(summary?.udpConnections.map(String.init) ?? "--")")
-                    DetailInfoRow(title: "运行时长", value: NodeGetFormatters.uptime(summary?.uptime))
-                    DetailInfoRow(title: "数据更新", value: NodeGetFormatters.relativeTime(milliseconds: summary?.timestamp))
+                    DetailInfoRow(title: "累计接收", value: NodeGetFormatters.bytes(currentSummary?.totalReceived))
+                    DetailInfoRow(title: "累计发送", value: NodeGetFormatters.bytes(currentSummary?.totalTransmitted))
+                    DetailInfoRow(title: "磁盘读", value: NodeGetFormatters.speed(currentSummary?.readSpeed))
+                    DetailInfoRow(title: "磁盘写", value: NodeGetFormatters.speed(currentSummary?.writeSpeed))
+                    DetailInfoRow(title: "进程数", value: currentSummary?.processCount.map(String.init) ?? "--")
+                    DetailInfoRow(title: "TCP / UDP", value: "\(currentSummary?.tcpConnections.map(String.init) ?? "--") / \(currentSummary?.udpConnections.map(String.init) ?? "--")")
+                    DetailInfoRow(title: "运行时长", value: NodeGetFormatters.uptime(currentSummary?.uptime))
+                    DetailInfoRow(title: "数据更新", value: NodeGetFormatters.relativeTime(milliseconds: currentSummary?.timestamp))
                 }
             }
             .padding(18)
@@ -230,10 +256,10 @@ struct AgentDetailView: View {
         VStack(alignment: .leading, spacing: 14) {
             SectionCaption(text: "费用")
             VStack(spacing: 12) {
-                DetailInfoRow(title: "到期", value: NodeGetFormatters.date(meta?.expiryDate))
-                DetailInfoRow(title: "剩余", value: NodeGetFormatters.days(meta?.remainingDays))
-                DetailInfoRow(title: "续费价格", value: meta?.displayPrice ?? "--")
-                DetailInfoRow(title: "计费周期", value: meta?.cycleText ?? "--")
+                DetailInfoRow(title: "到期", value: NodeGetFormatters.date(currentMeta?.expiryDate))
+                DetailInfoRow(title: "剩余", value: NodeGetFormatters.days(currentMeta?.remainingDays))
+                DetailInfoRow(title: "续费价格", value: currentMeta?.displayPrice ?? "--")
+                DetailInfoRow(title: "计费周期", value: currentMeta?.cycleText ?? "--")
 
                 GeometryReader { geo in
                     let progress = billingProgress
@@ -278,7 +304,7 @@ struct AgentDetailView: View {
     }
 
     private var isOnline: Bool {
-        guard let timestamp = summary?.timestamp else { return false }
+        guard let timestamp = currentSummary?.timestamp else { return false }
         return Date().timeIntervalSince1970 * 1000 - Double(timestamp) < 120_000
     }
 
@@ -302,24 +328,24 @@ struct AgentDetailView: View {
     }
 
     private var loadText: String {
-        let one = summary?.loadOne.map { String(format: "%.2f", $0) } ?? "--"
-        let five = summary?.loadFive.map { String(format: "%.2f", $0) } ?? "--"
-        let fifteen = summary?.loadFifteen.map { String(format: "%.2f", $0) } ?? "--"
+        let one = currentSummary?.loadOne.map { String(format: "%.2f", $0) } ?? "--"
+        let five = currentSummary?.loadFive.map { String(format: "%.2f", $0) } ?? "--"
+        let fifteen = currentSummary?.loadFifteen.map { String(format: "%.2f", $0) } ?? "--"
         return "\(one) / \(five) / \(fifteen)"
     }
 
     private var virtText: String {
-        meta?.virtualization.nilIfEmpty ?? staticInfo?.system?.virtualization ?? "--"
+        currentMeta?.virtualization.nilIfEmpty ?? currentStaticInfo?.system?.virtualization ?? "--"
     }
 
     private var coreText: String {
-        let physical = staticInfo?.cpu?.physicalCores.map(String.init) ?? "--"
-        let logical = staticInfo?.cpu?.logicalCores.map(String.init) ?? "--"
+        let physical = currentStaticInfo?.cpu?.physicalCores.map(String.init) ?? "--"
+        let logical = currentStaticInfo?.cpu?.logicalCores.map(String.init) ?? "--"
         return "\(physical) 物理 / \(logical) 逻辑"
     }
 
     private var billingProgress: Double {
-        guard let remaining = meta?.remainingDays, let cycle = meta?.priceCycle, cycle > 0 else { return 0 }
+        guard let remaining = currentMeta?.remainingDays, let cycle = currentMeta?.priceCycle, cycle > 0 else { return 0 }
         return min(max(Double(remaining) / Double(cycle), 0), 1)
     }
 
@@ -333,18 +359,50 @@ struct AgentDetailView: View {
         return String(uuid.prefix(8)) + "..." + String(uuid.suffix(4))
     }
 
-    private func loadExtraData() async {
+    private func autoRefreshLoop() async {
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 15_000_000_000)
+            if Task.isCancelled { break }
+            await loadExtraData(showLoading: false)
+        }
+    }
+
+    private func loadExtraData(showLoading: Bool = true) async {
+        guard !isLoadingExtra else { return }
+
         guard let token = KeychainStore.shared.token(for: server.id) else {
             extraMessage = "未找到 Token，无法读取趋势和 Ping 数据。"
             return
         }
 
-        isLoadingExtra = true
-        defer { isLoadingExtra = false }
+        if showLoading { isLoadingExtra = true }
+        defer {
+            if showLoading { isLoadingExtra = false }
+        }
 
         let client = NodeGetClient(baseURL: server.baseURL)
 
         var messages: [String] = []
+
+        do {
+            let rows = try await client.latestDynamicSummaries(token: token, uuids: [uuid])
+            liveSummary = rows.first
+        } catch {
+            messages.append("实时：\(error.localizedDescription)")
+        }
+
+        do {
+            liveStaticInfo = try await client.latestStaticInfo(token: token, uuid: uuid)
+        } catch {
+            // 静态信息失败不阻断实时数据刷新
+        }
+
+        do {
+            let metadata = try await client.metadataMap(token: token, uuids: [uuid])
+            liveMeta = metadata[uuid]
+        } catch {
+            // 元数据失败不阻断实时数据刷新
+        }
 
         switch await loadHistory(client: client, token: token) {
         case .success(let rows):
@@ -367,7 +425,7 @@ struct AgentDetailView: View {
             messages.append("TCP Ping：\(error.localizedDescription)")
         }
 
-        extraMessage = messages.isEmpty ? "趋势、Ping 和 TCP Ping 数据已更新。" : "部分数据读取失败：" + messages.joined(separator: "；")
+        extraMessage = messages.isEmpty ? "自动刷新于 \(NodeGetFormatters.clockTime(Date()))。" : "部分数据读取失败：" + messages.joined(separator: "；")
     }
 
     private func loadHistory(client: NodeGetClient, token: String) async -> Result<[AgentSummary], Error> {

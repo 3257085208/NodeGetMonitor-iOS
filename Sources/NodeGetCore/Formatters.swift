@@ -123,4 +123,11 @@ public enum NodeGetStats {
         let diffs = zip(values.dropFirst(), values).map { abs($0 - $1) }
         return diffs.reduce(0, +) / Double(diffs.count)
     }
+
+    public static func clockTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter.string(from: date)
+    }
+
 }

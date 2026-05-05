@@ -23,9 +23,8 @@ struct ServerDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, prompt: "搜索节点…")
         .task {
-            if summaries.isEmpty {
-                await refreshAll()
-            }
+            await refreshAll()
+            await autoRefreshLoop()
         }
         .refreshable {
             await refreshAll()
@@ -168,14 +167,26 @@ struct ServerDetailView: View {
         ].joined(separator: " ")
     }
 
-    private func refreshAll() async {
+    private func autoRefreshLoop() async {
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 15_000_000_000)
+            if Task.isCancelled { break }
+            await refreshAll(showLoading: false)
+        }
+    }
+
+    private func refreshAll(showLoading: Bool = true) async {
+        guard !isLoading else { return }
+
         guard let token = KeychainStore.shared.token(for: profile.id) else {
             serverMessage = "未找到 Token。请删除后重新添加服务器。"
             return
         }
 
-        isLoading = true
-        defer { isLoading = false }
+        if showLoading { isLoading = true }
+        defer {
+            if showLoading { isLoading = false }
+        }
 
         do {
             let client = NodeGetClient(baseURL: profile.baseURL)
@@ -203,7 +214,7 @@ struct ServerDetailView: View {
                 summaries = summaries.filter { !hiddenUUIDs.contains($0.uuid) }
             }
 
-            serverMessage = "连接成功：\(hello)；读取到 \(agentUUIDs.count) 个 Agent 的实时监控、静态信息和元数据。"
+            serverMessage = "连接成功：\(hello)；读取到 \(agentUUIDs.count) 个 Agent。自动刷新：\(NodeGetFormatters.clockTime(Date()))"
         } catch {
             serverMessage = "刷新失败：\(error.localizedDescription)"
         }
