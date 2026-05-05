@@ -11,21 +11,26 @@ final class ServerDashboardDataStore: ObservableObject {
     @Published var metaByUUID: [String: AgentMeta] = [:]
     @Published var isLoading = false
     @Published var lastRefresh: Date?
+    private var isRefreshing = false
 
     init(profile: ServerProfile) {
         self.profile = profile
     }
 
     func refresh(showLoading: Bool = true) async {
-        guard !isLoading else { return }
+        guard !isRefreshing else { return }
 
         guard let token = KeychainStore.shared.token(for: profile.id) else {
             serverMessage = "未找到 Token。请到右上角菜单 > 设置里重新添加主控。"
             return
         }
 
-        isLoading = true
-        defer { isLoading = false }
+        isRefreshing = true
+        if showLoading { isLoading = true }
+        defer {
+            isRefreshing = false
+            if showLoading { isLoading = false }
+        }
 
         do {
             let client = NodeGetClient(baseURL: profile.baseURL)
@@ -52,7 +57,7 @@ final class ServerDashboardDataStore: ObservableObject {
             }
 
             lastRefresh = Date()
-            serverMessage = "连接成功：\(hello)；读取到 \(sortedUUIDs.count) 个 Agent。刷新于 \(NodeGetFormatters.clockTime(Date()))。"
+            serverMessage = "连接成功：\(hello)；读取到 \(sortedUUIDs.count) 个 Agent。每 2 秒自动刷新于 \(NodeGetFormatters.clockTime(Date()))。"
         } catch {
             serverMessage = "刷新失败：\(error.localizedDescription)"
         }

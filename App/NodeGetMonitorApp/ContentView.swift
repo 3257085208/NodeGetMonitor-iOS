@@ -71,8 +71,6 @@ struct HomeDashboardView: View {
     @StateObject private var store: ServerDashboardDataStore
     @State private var searchText = ""
 
-    private let refreshTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
-
     init(profile: ServerProfile) {
         _store = StateObject(wrappedValue: ServerDashboardDataStore(profile: profile))
     }
@@ -93,14 +91,16 @@ struct HomeDashboardView: View {
             .padding(.bottom, 32)
         }
         .searchable(text: $searchText, prompt: "搜索节点…")
-        .task {
+        .task(id: store.profile.id) {
             await store.refresh()
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                guard !Task.isCancelled else { break }
+                await store.refresh(showLoading: false)
+            }
         }
         .refreshable {
             await store.refresh()
-        }
-        .onReceive(refreshTimer) { _ in
-            Task { await store.refresh(showLoading: false) }
         }
     }
 
@@ -148,7 +148,7 @@ struct HomeDashboardView: View {
             Text(store.isLoading ? "正在读取 Agent…" : "暂无 Agent 数据")
                 .font(.system(size: 24, weight: .black, design: .rounded))
                 .foregroundStyle(Color.ngText)
-            Text("首页会自动显示当前主控下的 Agent 卡片。下拉或等待 15 秒会自动刷新。")
+            Text("首页会自动显示当前主控下的 Agent 卡片。下拉或等待 2 秒会自动刷新。")
                 .font(.subheadline)
                 .foregroundStyle(Color.ngMuted)
         }
@@ -305,8 +305,8 @@ struct AboutView: View {
                         .font(.headline)
                         .foregroundStyle(Color.ngMuted)
                     VStack(spacing: 12) {
-                        DetailInfoRow(title: "版本", value: "0.4.6")
-                        DetailInfoRow(title: "刷新", value: "首页与详情页每 15 秒自动刷新")
+                        DetailInfoRow(title: "版本", value: "0.4.7")
+                        DetailInfoRow(title: "刷新", value: "首页与详情页每 2 秒自动刷新")
                         DetailInfoRow(title: "构建", value: "Unsigned IPA 文件名会带版本号")
                     }
                     .padding(18)

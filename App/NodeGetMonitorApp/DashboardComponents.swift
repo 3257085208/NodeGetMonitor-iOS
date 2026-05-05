@@ -297,7 +297,11 @@ struct TrendMetricCard: View {
     let title: String
     let value: String
     let values: [Double?]
+    let timestamps: [Int64?]
     let color: Color
+    var valueFormatter: (Double?) -> String = { NodeGetFormatters.percent($0) }
+
+    @State private var selectedIndex: Int?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -310,11 +314,112 @@ struct TrendMetricCard: View {
                     .font(.caption.bold())
                     .foregroundStyle(Color.ngText)
             }
-            MiniSparkline(values: values, lineColor: color)
+
+            interactiveSparkline
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.ngBorder, lineWidth: 1))
+    }
+
+    private var interactiveSparkline: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .topLeading) {
+                MiniSparkline(values: values, lineColor: color)
+
+                if let selected = selectedIndex, selected < values.count {
+                    let x = xPosition(index: selected, width: geo.size.width)
+                    Path { path in
+                        path.move(to: CGPoint(x: x, y: 0))
+                        path.addLine(to: CGPoint(x: x, y: geo.size.height))
+                    }
+                    .stroke(Color.ngMuted.opacity(0.45), lineWidth: 1)
+
+                    if let point = pointPosition(index: selected, size: geo.size) {
+                        Circle()
+                            .fill(color)
+                            .frame(width: 8, height: 8)
+                            .position(point)
+                    }
+
+                    TrendTooltipView(
+                        time: NodeGetFormatters.clockTime(milliseconds: timestamp(at: selected)),
+                        title: title,
+                        value: valueFormatter(values[selected]),
+                        color: color
+                    )
+                    .position(x: tooltipX(x, width: geo.size.width), y: 8)
+                }
+            }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { gesture in
+                        selectedIndex = nearestIndex(locationX: gesture.location.x, width: geo.size.width)
+                    }
+                    .onEnded { _ in
+                        selectedIndex = nil
+                    }
+            )
+        }
+        .frame(height: 72)
+    }
+
+    private func timestamp(at index: Int) -> Int64? {
+        guard index >= 0, index < timestamps.count else { return nil }
+        return timestamps[index]
+    }
+
+    private func nearestIndex(locationX: CGFloat, width: CGFloat) -> Int {
+        guard values.count > 1, width > 0 else { return 0 }
+        let ratio = min(max(locationX / width, 0), 1)
+        return min(max(Int(round(ratio * CGFloat(values.count - 1))), 0), values.count - 1)
+    }
+
+    private func xPosition(index: Int, width: CGFloat) -> CGFloat {
+        guard values.count > 1 else { return width / 2 }
+        return width * CGFloat(index) / CGFloat(values.count - 1)
+    }
+
+    private func pointPosition(index: Int, size: CGSize) -> CGPoint? {
+        guard let value = values[index] else { return nil }
+        let valid = values.compactMap { $0 }
+        let minValue = valid.min() ?? 0
+        let maxValue = valid.max() ?? 1
+        let span = max(maxValue - minValue, 1)
+        let x = xPosition(index: index, width: size.width)
+        let y = size.height - size.height * CGFloat((value - minValue) / span)
+        return CGPoint(x: x, y: y)
+    }
+
+    private func tooltipX(_ x: CGFloat, width: CGFloat) -> CGFloat {
+        min(max(x, 70), max(70, width - 70))
+    }
+}
+
+struct TrendTooltipView: View {
+    let time: String
+    let title: String
+    let value: String
+    let color: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(time)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(Color.ngMuted)
+            Text("\(title)：\(value)")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(color)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(Color.white)
+                .shadow(color: Color.black.opacity(0.12), radius: 8, x: 0, y: 4)
+        )
+        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(Color.ngBorder, lineWidth: 1))
     }
 }
 

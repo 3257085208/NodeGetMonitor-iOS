@@ -19,8 +19,7 @@ struct AgentDetailView: View {
     @State private var tcpRows: [TaskQueryResult] = []
     @State private var extraMessage = "正在读取趋势与 Ping 数据…"
     @State private var isLoadingExtra = false
-
-    private let refreshTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
+    @State private var isRefreshingExtra = false
 
     var body: some View {
         ZStack {
@@ -51,14 +50,16 @@ struct AgentDetailView: View {
         }
         .navigationTitle(displayName)
         .navigationBarTitleDisplayMode(.inline)
-        .task {
+        .task(id: uuid) {
             await loadExtraData()
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                guard !Task.isCancelled else { break }
+                await loadExtraData(showLoading: false)
+            }
         }
         .refreshable {
             await loadExtraData()
-        }
-        .onReceive(refreshTimer) { _ in
-            Task { await loadExtraData(showLoading: false) }
         }
     }
 
@@ -182,11 +183,48 @@ struct AgentDetailView: View {
             }
 
             let rows = trendRowsForChart
+            let times = rows.map { $0.timestamp }
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                TrendMetricCard(title: "CPU %", value: NodeGetFormatters.percent(rows.last?.cpuUsage ?? currentSummary?.cpuUsage), values: rows.map { $0.cpuUsage }, color: .blue)
-                TrendMetricCard(title: "内存 %", value: NodeGetFormatters.percent(rows.last?.memoryUsagePercent ?? currentSummary?.memoryUsagePercent), values: rows.map { $0.memoryUsagePercent }, color: Color.ngPrimary)
-                TrendMetricCard(title: "下行", value: NodeGetFormatters.speed(rows.last?.receiveSpeed ?? currentSummary?.receiveSpeed), values: rows.map { $0.receiveSpeed }, color: .purple)
-                TrendMetricCard(title: "上行", value: NodeGetFormatters.speed(rows.last?.transmitSpeed ?? currentSummary?.transmitSpeed), values: rows.map { $0.transmitSpeed }, color: .orange)
+                TrendMetricCard(
+                    title: "CPU %",
+                    value: NodeGetFormatters.percent(rows.last?.cpuUsage ?? currentSummary?.cpuUsage),
+                    values: rows.map { $0.cpuUsage },
+                    timestamps: times,
+                    color: .blue,
+                    valueFormatter: { NodeGetFormatters.percent($0) }
+                )
+                TrendMetricCard(
+                    title: "内存 %",
+                    value: NodeGetFormatters.percent(rows.last?.memoryUsagePercent ?? currentSummary?.memoryUsagePercent),
+                    values: rows.map { $0.memoryUsagePercent },
+                    timestamps: times,
+                    color: Color.ngPrimary,
+                    valueFormatter: { NodeGetFormatters.percent($0) }
+                )
+                TrendMetricCard(
+                    title: "磁盘 %",
+                    value: NodeGetFormatters.percent(rows.last?.diskUsagePercent ?? currentSummary?.diskUsagePercent),
+                    values: rows.map { $0.diskUsagePercent },
+                    timestamps: times,
+                    color: .orange,
+                    valueFormatter: { NodeGetFormatters.percent($0) }
+                )
+                TrendMetricCard(
+                    title: "下行",
+                    value: NodeGetFormatters.speed(rows.last?.receiveSpeed ?? currentSummary?.receiveSpeed),
+                    values: rows.map { $0.receiveSpeed },
+                    timestamps: times,
+                    color: .purple,
+                    valueFormatter: { NodeGetFormatters.speed($0) }
+                )
+                TrendMetricCard(
+                    title: "上行",
+                    value: NodeGetFormatters.speed(rows.last?.transmitSpeed ?? currentSummary?.transmitSpeed),
+                    values: rows.map { $0.transmitSpeed },
+                    timestamps: times,
+                    color: .orange,
+                    valueFormatter: { NodeGetFormatters.speed($0) }
+                )
             }
 
             Text(extraMessage)
@@ -373,15 +411,19 @@ struct AgentDetailView: View {
     }
 
     private func loadExtraData(showLoading: Bool = true) async {
-        guard !isLoadingExtra else { return }
+        guard !isRefreshingExtra else { return }
 
         guard let token = KeychainStore.shared.token(for: server.id) else {
             extraMessage = "未找到 Token，无法读取趋势和 Ping 数据。"
             return
         }
 
-        isLoadingExtra = true
-        defer { isLoadingExtra = false }
+        isRefreshingExtra = true
+        if showLoading { isLoadingExtra = true }
+        defer {
+            isRefreshingExtra = false
+            if showLoading { isLoadingExtra = false }
+        }
 
         let client = NodeGetClient(baseURL: server.baseURL)
 
@@ -428,7 +470,7 @@ struct AgentDetailView: View {
             messages.append("TCP Ping：\(error.localizedDescription)")
         }
 
-        extraMessage = messages.isEmpty ? "自动刷新于 \(NodeGetFormatters.clockTime(Date()))。" : "部分数据读取失败：" + messages.joined(separator: "；")
+        extraMessage = messages.isEmpty ? "每 2 秒自动刷新于 \(NodeGetFormatters.clockTime(Date()))。" : "部分数据读取失败：" + messages.joined(separator: "；")
     }
 
     private func loadHistory(client: NodeGetClient, token: String) async -> Result<[AgentSummary], Error> {
@@ -479,10 +521,12 @@ struct AgentDetailView: View {
 struct MiniLatencyChart: View {
     let stats: [LatencyStats]
 
+    @State private var selectedIndex: Int?
+
     var body: some View {
         GeometryReader { geo in
             let maxValue = max(stats.flatMap { $0.values.compactMap { $0 } }.max() ?? 1, 1)
-            ZStack {
+            ZStack(alignment: .topLeading) {
                 ForEach(Array(stats.enumerated()), id: \.offset) { index, stat in
                     Path { path in
                         var moved = false
@@ -501,12 +545,118 @@ struct MiniLatencyChart: View {
                     }
                     .stroke(color(index), style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                 }
+
+                if let selected = selectedIndex {
+                    let x = xPosition(index: selected, width: geo.size.width)
+                    Path { path in
+                        path.move(to: CGPoint(x: x, y: 0))
+                        path.addLine(to: CGPoint(x: x, y: geo.size.height))
+                    }
+                    .stroke(Color.ngMuted.opacity(0.45), lineWidth: 1)
+
+                    ForEach(Array(stats.enumerated()), id: \.offset) { index, stat in
+                        if let point = pointPosition(stat: stat, index: selected, maxValue: maxValue, size: geo.size) {
+                            Circle()
+                                .fill(color(index))
+                                .frame(width: 7, height: 7)
+                                .position(point)
+                        }
+                    }
+
+                    LatencyTooltipView(
+                        time: NodeGetFormatters.clockTime(milliseconds: timestamp(at: selected)),
+                        rows: tooltipRows(index: selected)
+                    )
+                    .position(x: tooltipX(x, width: geo.size.width), y: 18)
+                }
+            }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { gesture in
+                        selectedIndex = nearestIndex(locationX: gesture.location.x, width: geo.size.width)
+                    }
+                    .onEnded { _ in
+                        selectedIndex = nil
+                    }
+            )
+        }
+    }
+
+    private func nearestIndex(locationX: CGFloat, width: CGFloat) -> Int {
+        let count = stats.map { $0.values.count }.max() ?? 0
+        guard count > 1, width > 0 else { return 0 }
+        let ratio = min(max(locationX / width, 0), 1)
+        return min(max(Int(round(ratio * CGFloat(count - 1))), 0), count - 1)
+    }
+
+    private func xPosition(index: Int, width: CGFloat) -> CGFloat {
+        let count = stats.map { $0.values.count }.max() ?? 0
+        guard count > 1 else { return width / 2 }
+        return width * CGFloat(index) / CGFloat(count - 1)
+    }
+
+    private func pointPosition(stat: LatencyStats, index: Int, maxValue: Double, size: CGSize) -> CGPoint? {
+        guard index >= 0, index < stat.values.count, let value = stat.values[index] else { return nil }
+        let x = xPosition(index: index, width: size.width)
+        let y = size.height - size.height * CGFloat(value / maxValue)
+        return CGPoint(x: x, y: y)
+    }
+
+    private func timestamp(at index: Int) -> Int64? {
+        for stat in stats {
+            if index >= 0, index < stat.timestamps.count, let timestamp = stat.timestamps[index] {
+                return timestamp
             }
         }
+        return nil
+    }
+
+    private func tooltipRows(index: Int) -> [(name: String, value: String, color: Color)] {
+        stats.enumerated().map { offset, stat in
+            let value: Double? = (index >= 0 && index < stat.values.count) ? stat.values[index] : nil
+            return (stat.name, NodeGetFormatters.milliseconds(value), color(offset))
+        }
+    }
+
+    private func tooltipX(_ x: CGFloat, width: CGFloat) -> CGFloat {
+        min(max(x, 88), max(88, width - 88))
     }
 
     private func color(_ index: Int) -> Color {
         let colors: [Color] = [.red, .orange, .purple, .blue, .green, .cyan]
         return colors[index % colors.count]
+    }
+}
+
+struct LatencyTooltipView: View {
+    let time: String
+    let rows: [(name: String, value: String, color: Color)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(time)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(Color.ngMuted)
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(row.color)
+                        .frame(width: 6, height: 6)
+                    Text("\(row.name)：\(row.value)")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(row.color)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(Color.white)
+                .shadow(color: Color.black.opacity(0.12), radius: 8, x: 0, y: 4)
+        )
+        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(Color.ngBorder, lineWidth: 1))
     }
 }

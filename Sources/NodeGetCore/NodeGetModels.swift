@@ -413,12 +413,14 @@ public struct LatencyStats: Identifiable, Equatable {
     public let jitter: Double?
     public let lossRate: Double
     public let values: [Double?]
+    public let timestamps: [Int64?]
 
-    public init(name: String, avg: Double?, jitter: Double?, lossRate: Double, values: [Double?]) {
+    public init(name: String, avg: Double?, jitter: Double?, lossRate: Double, values: [Double?], timestamps: [Int64?] = []) {
         self.name = name
         self.avg = avg
         self.jitter = jitter
         self.lossRate = lossRate
         self.values = values
+        self.timestamps = timestamps
     }
 }

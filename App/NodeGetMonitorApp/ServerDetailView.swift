@@ -169,7 +169,7 @@ struct ServerDetailView: View {
 
     private func autoRefreshLoop() async {
         while !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: 15_000_000_000)
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
             if Task.isCancelled { break }
             await refreshAll(showLoading: false)
         }
