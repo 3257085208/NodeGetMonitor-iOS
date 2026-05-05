@@ -15,60 +15,64 @@ struct ServerDetailView: View {
     @State private var searchText = ""
 
     var body: some View {
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 16) {
-                ServerSummaryHeaderView(
-                    title: profile.name,
-                    subtitle: profile.baseURL.absoluteString,
-                    statusText: serverMessage,
-                    agentCount: filteredSummaries.count,
-                    loading: isLoading
-                ) {
-                    Task { await refreshAll() }
-                }
+        ZStack {
+            AppBackgroundView()
 
-                if filteredSummaries.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("暂无 Agent 数据")
-                            .font(.headline)
-                        Text(isLoading ? "正在读取节点监控数据…" : "点击刷新后会读取真实监控数据。")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 18) {
+                    ServerSummaryHeaderView(
+                        title: profile.name,
+                        subtitle: profile.baseURL.absoluteString,
+                        statusText: serverMessage,
+                        agentCount: filteredSummaries.count,
+                        loading: isLoading
+                    ) {
+                        Task { await refreshAll() }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(18)
-                    .background(
-                        RoundedRectangle(cornerRadius: 22, style: .continuous)
-                            .fill(Color(uiColor: .secondarySystemBackground))
-                    )
-                } else {
-                    ForEach(filteredSummaries) { summary in
-                        NavigationLink {
-                            AgentDetailView(
-                                server: profile,
-                                uuid: summary.uuid,
-                                summary: summary,
-                                staticInfo: staticInfoByUUID[summary.uuid]
-                            )
-                        } label: {
-                            DashboardAgentCardView(summary: summary, staticInfo: staticInfoByUUID[summary.uuid])
+
+                    if filteredSummaries.isEmpty {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("暂无 Agent 数据")
+                                .font(.system(size: 24, weight: .black, design: .rounded))
+                            Text(isLoading ? "正在读取节点监控数据…" : "点击刷新后会读取真实节点数据。")
+                                .font(.subheadline)
+                                .foregroundStyle(Color.ngMuted)
                         }
-                        .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(20)
+                        .ngSoftCard()
+                    } else {
+                        ForEach(filteredSummaries) { summary in
+                            NavigationLink {
+                                AgentDetailView(
+                                    server: profile,
+                                    uuid: summary.uuid,
+                                    summary: summary,
+                                    staticInfo: staticInfoByUUID[summary.uuid]
+                                )
+                            } label: {
+                                DashboardAgentCardView(summary: summary, staticInfo: staticInfoByUUID[summary.uuid])
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
-                }
 
-                Button(role: .destructive) {
-                    showDeleteConfirmation = true
-                } label: {
-                    Label("删除服务器", systemImage: "trash")
-                        .frame(maxWidth: .infinity)
+                    Button(role: .destructive) {
+                        showDeleteConfirmation = true
+                    } label: {
+                        Label("删除服务器", systemImage: "trash")
+                            .font(.title3.bold())
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
+                    }
+                    .foregroundStyle(.red)
+                    .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.white.opacity(0.75)))
+                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.ngBorder, lineWidth: 1))
+                    .padding(.top, 4)
                 }
-                .buttonStyle(.bordered)
-                .padding(.top, 8)
+                .padding(20)
             }
-            .padding()
         }
-        .background(Color(uiColor: .systemGroupedBackground))
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, prompt: "搜索节点…")
         .task {

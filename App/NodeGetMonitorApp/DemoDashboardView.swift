@@ -78,15 +78,25 @@ struct DemoDashboardView: View {
     ]
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 16) {
-                ForEach(demoAgents) { agent in
-                    DashboardAgentCardView(summary: agent, staticInfo: staticMap[agent.uuid])
+        ZStack {
+            AppBackgroundView()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Demo 仪表盘")
+                        .font(.system(size: 32, weight: .black, design: .rounded))
+                        .padding(.horizontal, 20)
+                        .padding(.top, 12)
+
+                    LazyVStack(spacing: 16) {
+                        ForEach(demoAgents) { agent in
+                            DashboardAgentCardView(summary: agent, staticInfo: staticMap[agent.uuid])
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 24)
                 }
             }
-            .padding()
         }
-        .background(Color(uiColor: .systemGroupedBackground))
-        .navigationTitle("Demo 仪表盘")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
