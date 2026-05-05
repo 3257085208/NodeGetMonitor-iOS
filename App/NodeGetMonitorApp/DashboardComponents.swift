@@ -3,81 +3,79 @@ import SwiftUI
 struct DashboardAgentCardView: View {
     let summary: AgentSummary
     let staticInfo: StaticAgentInfo?
+    let meta: AgentMeta?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top, spacing: 12) {
-                Circle()
-                    .fill(Color.ngPrimary)
-                    .frame(width: 12, height: 12)
-                    .padding(.top, 4)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(displayName)
-                        .font(.system(size: 22, weight: .black, design: .rounded))
-                        .foregroundStyle(Color.black)
-                        .lineLimit(1)
-
-                    Text(systemLine)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color.ngMuted)
-                        .lineLimit(1)
-                }
-
-                Spacer()
-
-                Text(NodeGetFormatters.relativeTime(milliseconds: summary.timestamp))
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(Color.ngMuted)
-            }
+            header
 
             HStack(spacing: 12) {
-                RingMetricView(title: "CPU", value: NodeGetFormatters.percent(summary.cpuUsage), progress: progress(summary.cpuUsage))
-                RingMetricView(title: "内存", value: NodeGetFormatters.percent(summary.memoryUsagePercent), progress: progress(summary.memoryUsagePercent))
-                RingMetricView(title: "磁盘", value: NodeGetFormatters.percent(summary.diskUsagePercent), progress: progress(summary.diskUsagePercent))
+                RingMetricView(title: "CPU", value: NodeGetFormatters.percent(summary.cpuUsage), progress: progress(summary.cpuUsage), size: 72)
+                RingMetricView(title: "内存", value: NodeGetFormatters.percent(summary.memoryUsagePercent), progress: progress(summary.memoryUsagePercent), size: 72)
+                RingMetricView(title: "磁盘", value: NodeGetFormatters.percent(summary.diskUsagePercent), progress: progress(summary.diskUsagePercent), size: 72)
             }
-            .frame(maxWidth: .infinity)
 
             Text(cpuLine)
-                .font(.subheadline.weight(.semibold))
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(Color.ngMuted)
                 .lineLimit(1)
 
+            OnlineStatusStrip(title: "在线状态", percent: isOnline ? 100 : 0, values: Array(repeating: isOnline, count: 40))
+
             metricGrid
 
-            bottomBar
+            HStack {
+                Label(NodeGetFormatters.speed(summary.receiveSpeed), systemImage: "arrow.down")
+                Label(NodeGetFormatters.speed(summary.transmitSpeed), systemImage: "arrow.up")
+                Spacer()
+                Text(NodeGetFormatters.relativeTime(milliseconds: summary.timestamp))
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Color.ngMuted)
+            .padding(.top, 2)
         }
         .padding(18)
         .ngSoftCard()
     }
 
-    private var displayName: String {
-        staticInfo?.displayName.lowercased() ?? shortUUID(summary.uuid)
-    }
+    private var header: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Circle()
+                .fill(isOnline ? Color.ngPrimary : Color.red)
+                .frame(width: 10, height: 10)
 
-    private var systemLine: String {
-        if let staticInfo, !staticInfo.systemLine.isEmpty {
-            return staticInfo.systemLine.lowercased()
-        }
-        return summary.uuid
-    }
+            Text(meta?.name.nilIfEmpty ?? staticInfo?.displayName ?? shortUUID(summary.uuid))
+                .font(.system(size: 20, weight: .black, design: .rounded))
+                .foregroundStyle(Color.ngText)
+                .lineLimit(1)
 
-    private var cpuLine: String {
-        if let staticInfo, !staticInfo.cpuLine.isEmpty {
-            return staticInfo.cpuLine
+            Spacer()
+
+            if let region = meta?.region, !region.isEmpty {
+                Text(region.uppercased())
+                    .font(.caption2.weight(.black))
+                    .foregroundStyle(Color.ngMuted)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color.ngBackground))
+            }
+
+            if let virt = virtualizationText.nilIfEmpty {
+                Text(virt.uppercased())
+                    .font(.caption2.weight(.black))
+                    .foregroundStyle(Color.ngText)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color.ngPrimarySoft))
+            }
         }
-        return "暂无 CPU 信息"
     }
 
     private var metricGrid: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 12) {
             HStack(spacing: 14) {
-                SmallMetricColumn(title: "内存", value: "\(NodeGetFormatters.bytes(summary.usedMemory)) / \(NodeGetFormatters.bytes(summary.totalMemory))")
+                SmallMetricColumn(title: "内存", value: summary.memoryUsedText)
                 SmallMetricColumn(title: "磁盘可用", value: NodeGetFormatters.bytes(summary.availableSpace))
-            }
-            HStack(spacing: 14) {
-                SmallMetricColumn(title: "下载", value: NodeGetFormatters.speed(summary.receiveSpeed))
-                SmallMetricColumn(title: "上传", value: NodeGetFormatters.speed(summary.transmitSpeed))
             }
             HStack(spacing: 14) {
                 SmallMetricColumn(title: "进程", value: summary.processCount.map(String.init) ?? "--")
@@ -86,19 +84,24 @@ struct DashboardAgentCardView: View {
         }
     }
 
-    private var bottomBar: some View {
-        HStack {
-            Label(summary.gpuUsage == nil ? "无 GPU" : "GPU \(NodeGetFormatters.percent(summary.gpuUsage))", systemImage: "bolt.horizontal.circle")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(Color.ngMuted)
+    private var isOnline: Bool {
+        guard let timestamp = summary.timestamp else { return false }
+        return Date().timeIntervalSince1970 * 1000 - Double(timestamp) < 120_000
+    }
 
-            Spacer()
+    private var virtualizationText: String {
+        if let v = meta?.virtualization.nilIfEmpty { return v }
+        return staticInfo?.system?.virtualization ?? ""
+    }
 
-            Image(systemName: "chevron.right")
-                .font(.headline)
-                .foregroundStyle(Color.ngMuted.opacity(0.75))
-        }
-        .padding(.top, 4)
+    private var systemLine: String {
+        if let staticInfo, !staticInfo.systemLine.isEmpty { return staticInfo.systemLine.lowercased() }
+        return summary.uuid
+    }
+
+    private var cpuLine: String {
+        if let staticInfo, !staticInfo.cpuLine.isEmpty { return staticInfo.cpuLine }
+        return "暂无 CPU 信息"
     }
 
     private func progress(_ value: Double?) -> Double {
@@ -116,30 +119,30 @@ struct RingMetricView: View {
     let title: String
     let value: String
     let progress: Double
+    var size: CGFloat = 92
 
     var body: some View {
-        VStack(spacing: 8) {
-            ZStack {
-                Circle()
-                    .stroke(Color.ngBorder, lineWidth: 8)
-                Circle()
-                    .trim(from: 0, to: progress)
-                    .stroke(Color.ngPrimary, style: StrokeStyle(lineWidth: 8, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
+        ZStack {
+            Circle()
+                .stroke(Color.ngBorder, lineWidth: size > 80 ? 9 : 7)
+            Circle()
+                .trim(from: 0, to: progress)
+                .stroke(Color.ngPrimary, style: StrokeStyle(lineWidth: size > 80 ? 9 : 7, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .shadow(color: Color.ngPrimary.opacity(0.22), radius: 12, x: 0, y: 6)
 
-                VStack(spacing: 2) {
-                    Text(value)
-                        .font(.title3.bold())
-                        .foregroundStyle(Color.black)
-                        .monospacedDigit()
-                        .minimumScaleFactor(0.7)
-                    Text(title)
-                        .font(.caption.bold())
-                        .foregroundStyle(Color.ngMuted)
-                }
+            VStack(spacing: 2) {
+                Text(value)
+                    .font(size > 80 ? .title3.bold() : .subheadline.bold())
+                    .foregroundStyle(Color.ngText)
+                    .monospacedDigit()
+                    .minimumScaleFactor(0.62)
+                Text(title)
+                    .font(.caption.bold())
+                    .foregroundStyle(Color.ngMuted)
             }
-            .frame(width: 84, height: 84)
         }
+        .frame(width: size, height: size)
         .frame(maxWidth: .infinity)
     }
 }
@@ -154,8 +157,8 @@ struct SmallMetricColumn: View {
                 .font(.caption.weight(.bold))
                 .foregroundStyle(Color.ngMuted)
             Text(value)
-                .font(.system(size: 18, weight: .black, design: .rounded))
-                .foregroundStyle(Color.black)
+                .font(.system(size: 17, weight: .black, design: .rounded))
+                .foregroundStyle(Color.ngText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.68)
         }
@@ -213,9 +216,169 @@ struct ServerSummaryHeaderView: View {
             }
 
             Text(statusText)
-                .font(.title3.weight(.semibold))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Color.ngMuted)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+struct OnlineStatusStrip: View {
+    let title: String
+    let percent: Double
+    let values: [Bool]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label(title, systemImage: "waveform.path.ecg")
+                    .foregroundStyle(Color.ngPrimary)
+                    .font(.subheadline.bold())
+                Spacer()
+                Text(NodeGetFormatters.percent(percent))
+                    .foregroundStyle(Color.ngPrimary)
+                    .font(.subheadline.bold())
+            }
+
+            HStack(spacing: 3) {
+                ForEach(Array(values.enumerated()), id: \.offset) { _, online in
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(online ? Color.ngPrimary : Color.red.opacity(0.65))
+                        .frame(height: 28)
+                }
+            }
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.ngBackground.opacity(0.75)))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.ngBorder, style: StrokeStyle(lineWidth: 1, dash: [3, 3])))
+    }
+}
+
+struct MiniSparkline: View {
+    let values: [Double?]
+    let lineColor: Color
+    var fill: Bool = false
+
+    var body: some View {
+        GeometryReader { geo in
+            let valid = values.compactMap { $0 }
+            let minValue = valid.min() ?? 0
+            let maxValue = valid.max() ?? 1
+            let span = max(maxValue - minValue, 1)
+
+            Path { path in
+                var didMove = false
+                for (index, value) in values.enumerated() {
+                    guard let value else { continue }
+                    let x = geo.size.width * CGFloat(index) / CGFloat(max(values.count - 1, 1))
+                    let y = geo.size.height - geo.size.height * CGFloat((value - minValue) / span)
+                    let point = CGPoint(x: x, y: y)
+                    if didMove {
+                        path.addLine(to: point)
+                    } else {
+                        path.move(to: point)
+                        didMove = true
+                    }
+                }
+            }
+            .stroke(lineColor, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+        }
+        .frame(height: 52)
+    }
+}
+
+struct TrendMetricCard: View {
+    let title: String
+    let value: String
+    let values: [Double?]
+    let color: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(title)
+                    .font(.caption.bold())
+                    .foregroundStyle(Color.ngMuted)
+                Spacer()
+                Text(value)
+                    .font(.caption.bold())
+                    .foregroundStyle(Color.ngText)
+            }
+            MiniSparkline(values: values, lineColor: color)
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.ngBorder, lineWidth: 1))
+    }
+}
+
+struct LatencyQualityRowView: View {
+    let stats: LatencyStats
+    let type: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(stats.name)
+                    .font(.subheadline.bold())
+                    .foregroundStyle(Color.ngText)
+                    .lineLimit(1)
+                Spacer()
+                Text(NodeGetFormatters.milliseconds(stats.avg))
+                    .font(.subheadline.bold())
+                    .foregroundStyle(Color.ngText)
+            }
+
+            HStack(spacing: 3) {
+                ForEach(Array(stats.values.enumerated()), id: \.offset) { _, value in
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(color(for: value))
+                        .frame(height: 18)
+                }
+            }
+
+            HStack {
+                Text("抖动 \(NodeGetFormatters.milliseconds(stats.jitter))")
+                Spacer()
+                Text("丢包 \(NodeGetFormatters.percent(stats.lossRate))")
+            }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Color.ngMuted)
+        }
+    }
+
+    private func color(for value: Double?) -> Color {
+        guard let value else { return .red }
+        if value <= 45 { return Color.green }
+        if value <= 90 { return Color(red: 132/255, green: 204/255, blue: 22/255) }
+        if value <= 160 { return Color.yellow }
+        if value <= 300 { return Color.orange }
+        return Color.red.opacity(0.75)
+    }
+}
+
+struct DetailInfoRow: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title)
+                .foregroundStyle(Color.ngMuted)
+            Spacer()
+            Text(value)
+                .foregroundStyle(Color.ngText)
+                .multilineTextAlignment(.trailing)
+                .lineLimit(2)
+                .minimumScaleFactor(0.75)
+        }
+        .font(.subheadline.weight(.semibold))
+    }
+}
+
+extension String {
+    var nilIfEmpty: String? {
+        let clean = trimmingCharacters(in: .whitespacesAndNewlines)
+        return clean.isEmpty ? nil : clean
     }
 }

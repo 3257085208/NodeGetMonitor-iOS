@@ -135,14 +135,14 @@ struct ContentView: View {
                     Text("Version")
                         .font(.headline)
                     Spacer()
-                    Text("0.3.1")
+                    Text("0.4.0")
                         .font(.headline)
                         .foregroundStyle(Color.ngMuted)
                 }
 
                 Divider()
 
-                Text("这一版重点把首页和整体视觉重新整理，风格参考你给的前端项目：浅灰背景、软卡片、入口更清晰，同时保留真实监控数据流。")
+                Text("这一版开始接入趋势、Ping/TCP Ping、在线状态、费用元数据等 Dashboard 模块，继续向 StatusShow 前端风格靠近。")
                     .font(.subheadline)
                     .foregroundStyle(Color.ngMuted)
                     .fixedSize(horizontal: false, vertical: true)

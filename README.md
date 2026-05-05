@@ -4,7 +4,7 @@ A native SwiftUI monitor app for NodeGet.
 
 The current goal is to build unsigned IPAs through GitHub Actions, sign them locally with an Apple ID signing tool, and test them on a personal iPhone before preparing a formal App Store release.
 
-## Current version: 0.2.1
+## Current version: 0.4.0
 
 ### Features
 
@@ -72,3 +72,8 @@ The intended app design is privacy-first:
 ## License
 
 MIT
+
+
+## v0.4.0
+
+Adds dashboard detail modules for dynamic summary history, Task ping/tcp_ping quality, KV metadata billing fields, online strip, and trend placeholders.

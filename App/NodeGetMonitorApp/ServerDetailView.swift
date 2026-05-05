@@ -10,6 +10,7 @@ struct ServerDetailView: View {
     @State private var agentUUIDs: [String] = []
     @State private var summaries: [AgentSummary] = []
     @State private var staticInfoByUUID: [String: StaticAgentInfo] = [:]
+    @State private var metaByUUID: [String: AgentMeta] = [:]
     @State private var isLoading = false
     @State private var showDeleteConfirmation = false
     @State private var searchText = ""
@@ -48,10 +49,15 @@ struct ServerDetailView: View {
                                     server: profile,
                                     uuid: summary.uuid,
                                     summary: summary,
-                                    staticInfo: staticInfoByUUID[summary.uuid]
+                                    staticInfo: staticInfoByUUID[summary.uuid],
+                                    meta: metaByUUID[summary.uuid]
                                 )
                             } label: {
-                                DashboardAgentCardView(summary: summary, staticInfo: staticInfoByUUID[summary.uuid])
+                                DashboardAgentCardView(
+                                    summary: summary,
+                                    staticInfo: staticInfoByUUID[summary.uuid],
+                                    meta: metaByUUID[summary.uuid]
+                                )
                             }
                             .buttonStyle(.plain)
                         }
@@ -96,8 +102,8 @@ struct ServerDetailView: View {
 
     private var filteredSummaries: [AgentSummary] {
         let sorted = summaries.sorted { left, right in
-            let leftName = staticInfoByUUID[left.uuid]?.displayName ?? left.uuid
-            let rightName = staticInfoByUUID[right.uuid]?.displayName ?? right.uuid
+            let leftName = metaByUUID[left.uuid]?.name.nilIfEmpty ?? staticInfoByUUID[left.uuid]?.displayName ?? left.uuid
+            let rightName = metaByUUID[right.uuid]?.name.nilIfEmpty ?? staticInfoByUUID[right.uuid]?.displayName ?? right.uuid
             return leftName.localizedCaseInsensitiveCompare(rightName) == .orderedAscending
         }
 
@@ -106,8 +112,11 @@ struct ServerDetailView: View {
 
         return sorted.filter { summary in
             let info = staticInfoByUUID[summary.uuid]
+            let meta = metaByUUID[summary.uuid]
             let candidates = [
                 summary.uuid,
+                meta?.name ?? "",
+                meta?.region ?? "",
                 info?.displayName ?? "",
                 info?.systemLine ?? "",
                 info?.cpuLine ?? ""
@@ -131,42 +140,29 @@ struct ServerDetailView: View {
             let uuids = try await client.listAllAgentUUIDs(token: token)
             agentUUIDs = uuids.sorted()
 
-            let latestSummaries = try await client.latestDynamicSummaries(token: token, uuids: agentUUIDs)
-            summaries = latestSummaries.sorted { $0.uuid < $1.uuid }
+            summaries = try await client.latestDynamicSummaries(token: token, uuids: agentUUIDs)
+                .sorted { $0.uuid < $1.uuid }
 
-            let staticMap = await loadStaticInfoMap(client: client, token: token, uuids: agentUUIDs)
-            staticInfoByUUID = staticMap
+            do {
+                staticInfoByUUID = try await client.latestStaticInfoMap(token: token, uuids: agentUUIDs)
+            } catch {
+                staticInfoByUUID = [:]
+            }
 
-            serverMessage = "连接成功：\(hello)；读取到 \(agentUUIDs.count) 个 Agent 的实时监控数据。"
+            do {
+                metaByUUID = try await client.metadataMap(token: token, uuids: agentUUIDs)
+            } catch {
+                metaByUUID = [:]
+            }
+
+            let hidden = metaByUUID.filter { $0.value.hidden }.map(\.key)
+            if !hidden.isEmpty {
+                summaries = summaries.filter { !hidden.contains($0.uuid) }
+            }
+
+            serverMessage = "连接成功：\(hello)；读取到 \(agentUUIDs.count) 个 Agent 的实时监控、静态信息和元数据。"
         } catch {
             serverMessage = "刷新失败：\(error.localizedDescription)"
-        }
-    }
-
-    private func loadStaticInfoMap(
-        client: NodeGetClient,
-        token: String,
-        uuids: [String]
-    ) async -> [String: StaticAgentInfo] {
-        await withTaskGroup(of: (String, StaticAgentInfo?).self) { group in
-            for uuid in uuids {
-                group.addTask {
-                    do {
-                        let info = try await client.latestStaticInfo(token: token, uuid: uuid)
-                        return (uuid, info)
-                    } catch {
-                        return (uuid, nil)
-                    }
-                }
-            }
-
-            var result: [String: StaticAgentInfo] = [:]
-            for await (uuid, info) in group {
-                if let info {
-                    result[uuid] = info
-                }
-            }
-            return result
         }
     }
 }
