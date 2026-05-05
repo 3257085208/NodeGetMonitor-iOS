@@ -67,6 +67,13 @@ public enum NodeGetFormatters {
         guard let value else { return "--" }
         return "\(value) 天"
     }
+
+    public static func clockTime(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter.string(from: date)
+    }
+
 }
 
 public enum NodeGetStats {
@@ -122,12 +129,6 @@ public enum NodeGetStats {
         guard values.count > 1 else { return nil }
         let diffs = zip(values.dropFirst(), values).map { abs($0 - $1) }
         return diffs.reduce(0, +) / Double(diffs.count)
-    }
-
-    public static func clockTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm:ss"
-        return formatter.string(from: date)
     }
 
 }
