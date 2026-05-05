@@ -13,6 +13,8 @@ struct DemoDashboardView: View {
             availableSpace: 41_000_000_000,
             receiveSpeed: 8_500_000,
             transmitSpeed: 1_200_000,
+            uptime: 86_400,
+            processCount: 132,
             gpuUsage: 5.0
         ),
         AgentSummary(
@@ -26,7 +28,52 @@ struct DemoDashboardView: View {
             availableSpace: 92_000_000_000,
             receiveSpeed: 2_400_000,
             transmitSpeed: 3_100_000,
+            uptime: 172_800,
+            processCount: 221,
             gpuUsage: nil
+        )
+    ]
+
+    private let staticMap: [String: StaticAgentInfo] = [
+        "demo-tokyo-01": StaticAgentInfo(
+            uuid: "demo-tokyo-01",
+            timestamp: 1_769_344_160_000,
+            cpu: StaticCPUData(
+                physicalCores: 4,
+                logicalCores: 8,
+                perCore: [StaticPerCpuCoreData(id: 1, name: "CPU 1", vendorID: "Intel", brand: "Intel Xeon")]
+            ),
+            system: StaticSystemData(
+                systemName: "Linux",
+                systemKernel: nil,
+                systemKernelVersion: nil,
+                systemOsVersion: nil,
+                systemOsLongVersion: "Debian GNU/Linux 12",
+                distributionID: "debian",
+                systemHostName: "EUserv",
+                arch: "x86_64",
+                virtualization: "LXC"
+            )
+        ),
+        "demo-la-02": StaticAgentInfo(
+            uuid: "demo-la-02",
+            timestamp: 1_769_344_160_000,
+            cpu: StaticCPUData(
+                physicalCores: 2,
+                logicalCores: 4,
+                perCore: [StaticPerCpuCoreData(id: 1, name: "CPU 1", vendorID: "AMD", brand: "AMD EPYC")]
+            ),
+            system: StaticSystemData(
+                systemName: "Linux",
+                systemKernel: nil,
+                systemKernelVersion: nil,
+                systemOsVersion: nil,
+                systemOsLongVersion: "Debian GNU/Linux 12",
+                distributionID: "debian",
+                systemHostName: "MegaBoxPro",
+                arch: "x86_64",
+                virtualization: "KVM"
+            )
         )
     ]
 
@@ -34,80 +81,12 @@ struct DemoDashboardView: View {
         ScrollView {
             LazyVStack(spacing: 16) {
                 ForEach(demoAgents) { agent in
-                    AgentCardView(agent: agent)
+                    DashboardAgentCardView(summary: agent, staticInfo: staticMap[agent.uuid])
                 }
             }
             .padding()
         }
+        .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle("Demo 仪表盘")
-    }
-}
-
-struct AgentCardView: View {
-    let agent: AgentSummary
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(agent.uuid)
-                        .font(.headline)
-                    Text("在线 · Demo 数据")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                Text(NodeGetFormatters.percent(agent.cpuUsage))
-                    .font(.title2.bold())
-            }
-
-            Divider()
-
-            Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 10) {
-                GridRow {
-                    MetricLabel(title: "CPU", value: NodeGetFormatters.percent(agent.cpuUsage))
-                    MetricLabel(title: "GPU", value: NodeGetFormatters.percent(agent.gpuUsage))
-                }
-
-                GridRow {
-                    MetricLabel(
-                        title: "内存",
-                        value: "\(NodeGetFormatters.bytes(agent.usedMemory)) / \(NodeGetFormatters.bytes(agent.totalMemory))"
-                    )
-                    MetricLabel(
-                        title: "磁盘可用",
-                        value: NodeGetFormatters.bytes(agent.availableSpace)
-                    )
-                }
-
-                GridRow {
-                    MetricLabel(title: "下载", value: NodeGetFormatters.speed(agent.receiveSpeed))
-                    MetricLabel(title: "上传", value: NodeGetFormatters.speed(agent.transmitSpeed))
-                }
-            }
-        }
-        .padding()
-        .background(.thinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-    }
-}
-
-struct MetricLabel: View {
-    let title: String
-    let value: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.subheadline.weight(.semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }

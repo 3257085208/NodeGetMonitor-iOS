@@ -104,6 +104,21 @@ public final class NodeGetClient {
             resultType: [AgentSummary].self
         )
     }
+
+    public func latestStaticInfo(token: String, uuid: String) async throws -> StaticAgentInfo? {
+        let records: [StaticAgentInfo] = try await call(
+            method: "agent_query_static",
+            params: AgentStaticQueryParams(
+                token: token,
+                staticDataQuery: StaticDataQuery(
+                    fields: ["cpu", "system"],
+                    condition: [.uuid(uuid), .last]
+                )
+            ),
+            resultType: [StaticAgentInfo].self
+        )
+        return records.first
+    }
 }
 
 public struct AgentUUIDListResult: Decodable, Equatable {
@@ -131,6 +146,48 @@ public struct AgentDynamicSummaryMultiLastQueryParams: Encodable, Equatable {
         self.token = token
         self.uuids = uuids
         self.fields = fields
+    }
+}
+
+public struct AgentStaticQueryParams: Encodable, Equatable {
+    public let token: String
+    public let staticDataQuery: StaticDataQuery
+
+    enum CodingKeys: String, CodingKey {
+        case token
+        case staticDataQuery = "static_data_query"
+    }
+
+    public init(token: String, staticDataQuery: StaticDataQuery) {
+        self.token = token
+        self.staticDataQuery = staticDataQuery
+    }
+}
+
+public struct StaticDataQuery: Encodable, Equatable {
+    public let fields: [String]
+    public let condition: [QueryCondition]
+
+    public init(fields: [String], condition: [QueryCondition]) {
+        self.fields = fields
+        self.condition = condition
+    }
+}
+
+public enum QueryCondition: Equatable {
+    case uuid(String)
+    case last
+}
+
+extension QueryCondition: Encodable {
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .uuid(let value):
+            try container.encode(["uuid": value])
+        case .last:
+            try container.encode("last")
+        }
     }
 }
 

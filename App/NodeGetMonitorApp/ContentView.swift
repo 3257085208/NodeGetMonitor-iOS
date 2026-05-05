@@ -25,7 +25,7 @@ struct ContentView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("还没有保存服务器")
                                 .font(.headline)
-                            Text("添加服务器并保存 Token 后，就可以拉取真实 Agent 列表。")
+                            Text("添加服务器并保存 Token 后，就可以查看真实节点仪表盘。")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }
@@ -44,8 +44,8 @@ struct ContentView: View {
 
                 Section("当前版本") {
                     LabeledContent("App", value: "NodeGet Monitor")
-                    LabeledContent("Version", value: "0.2.1")
-                    Text("这一版加入服务器保存、Keychain Token 存储和真实 Agent UUID 列表。")
+                    LabeledContent("Version", value: "0.3.0")
+                    Text("这一版开始把服务器页升级成移动端仪表盘样式，并接入实时 CPU、内存、磁盘、网络和静态系统信息。")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }

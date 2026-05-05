@@ -6,16 +6,37 @@ import UIKit
 struct AgentDetailView: View {
     let server: ServerProfile
     let uuid: String
+    let summary: AgentSummary?
+    let staticInfo: StaticAgentInfo?
 
     @State private var copyMessage = ""
 
     var body: some View {
         List {
-            Section("Agent UUID") {
-                Text(uuid)
-                    .font(.system(.body, design: .monospaced))
-                    .textSelection(.enabled)
+            Section("节点信息") {
+                LabeledContent("显示名称", value: staticInfo?.displayName ?? shortUUID(uuid))
+                LabeledContent("UUID", value: uuid)
+                if let staticInfo, !staticInfo.systemLine.isEmpty {
+                    LabeledContent("系统", value: staticInfo.systemLine)
+                }
+                if let staticInfo, !staticInfo.cpuLine.isEmpty {
+                    LabeledContent("CPU", value: staticInfo.cpuLine)
+                }
+            }
 
+            if let summary {
+                Section("实时数据") {
+                    LabeledContent("CPU", value: NodeGetFormatters.percent(summary.cpuUsage))
+                    LabeledContent("内存", value: "\(NodeGetFormatters.bytes(summary.usedMemory)) / \(NodeGetFormatters.bytes(summary.totalMemory))")
+                    LabeledContent("磁盘可用", value: NodeGetFormatters.bytes(summary.availableSpace))
+                    LabeledContent("下载", value: NodeGetFormatters.speed(summary.receiveSpeed))
+                    LabeledContent("上传", value: NodeGetFormatters.speed(summary.transmitSpeed))
+                    LabeledContent("运行时长", value: NodeGetFormatters.uptime(summary.uptime))
+                    LabeledContent("更新时间", value: NodeGetFormatters.relativeTime(milliseconds: summary.timestamp))
+                }
+            }
+
+            Section("操作") {
                 Button {
                     #if canImport(UIKit)
                     UIPasteboard.general.string = uuid
@@ -32,17 +53,16 @@ struct AgentDetailView: View {
                 }
             }
 
-            Section("下一步") {
-                Text("v0.2 已经接入真实 Agent UUID 列表。v0.3 会在这里调用 agent_dynamic_summary_multi_last_query，显示真实 CPU、内存、磁盘、网络和 GPU 数据。")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-
             Section("服务器") {
                 LabeledContent("名称", value: server.name)
                 LabeledContent("地址", value: server.baseURL.absoluteString)
             }
         }
-        .navigationTitle("Agent")
+        .navigationTitle(staticInfo?.displayName ?? "Agent")
+    }
+
+    private func shortUUID(_ uuid: String) -> String {
+        guard uuid.count > 12 else { return uuid }
+        return String(uuid.prefix(8)) + "..." + String(uuid.suffix(4))
     }
 }
