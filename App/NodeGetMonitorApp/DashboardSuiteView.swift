@@ -184,7 +184,7 @@ struct DashboardSuiteView: View {
             ])
         }
     }
-}}
+}
 
 struct DashboardModule: Identifiable {
     let id = UUID()
@@ -495,18 +495,30 @@ enum AdminNodeToolMode: String, CaseIterable, Identifiable {
     case status = "运行状态"
     case latency = "延迟曲线"
     case traffic = "流量统计"
+    case ping = "Ping 检测"
     case webshell = "WebShell"
     case files = "文件管理"
     case setting = "节点设置"
+    case docker = "Docker"
+    case firewall = "防火墙"
+    case process = "进程"
+    case update = "更新"
+
     var id: String { rawValue }
+
     var routeSuffix: String {
         switch self {
         case .status: return "status"
         case .latency: return "latency"
         case .traffic: return "traffic"
+        case .ping: return "ping"
         case .webshell: return "webshell"
         case .files: return "files"
         case .setting: return "setting"
+        case .docker: return "docker"
+        case .firewall: return "firewall"
+        case .process: return "process"
+        case .update: return "update"
         }
     }
 }
