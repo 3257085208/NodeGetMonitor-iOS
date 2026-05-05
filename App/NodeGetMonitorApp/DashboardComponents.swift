@@ -3,7 +3,7 @@ import SwiftUI
 struct DashboardAgentCardView: View {
     let summary: AgentSummary
     let staticInfo: StaticAgentInfo?
-    let meta: AgentMeta?
+    let meta: AgentMeta? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {

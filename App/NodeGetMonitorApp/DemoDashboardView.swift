@@ -6,6 +6,7 @@ struct DemoDashboardView: View {
             uuid: "demo-tokyo-01",
             timestamp: 1_769_344_160_000,
             cpuUsage: 12.4,
+            gpuUsage: 5.0,
             usedMemory: 3_200_000_000,
             totalMemory: 8_000_000_000,
             availableMemory: 4_800_000_000,
@@ -14,13 +15,13 @@ struct DemoDashboardView: View {
             receiveSpeed: 8_500_000,
             transmitSpeed: 1_200_000,
             uptime: 86_400,
-            processCount: 132,
-            gpuUsage: 5.0
+            processCount: 132
         ),
         AgentSummary(
             uuid: "demo-la-02",
             timestamp: 1_769_344_160_000,
             cpuUsage: 37.8,
+            gpuUsage: nil,
             usedMemory: 6_100_000_000,
             totalMemory: 16_000_000_000,
             availableMemory: 9_900_000_000,
@@ -29,8 +30,7 @@ struct DemoDashboardView: View {
             receiveSpeed: 2_400_000,
             transmitSpeed: 3_100_000,
             uptime: 172_800,
-            processCount: 221,
-            gpuUsage: nil
+            processCount: 221
         )
     ]
 
@@ -89,7 +89,7 @@ struct DemoDashboardView: View {
 
                     LazyVStack(spacing: 16) {
                         ForEach(demoAgents) { agent in
-                            DashboardAgentCardView(summary: agent, staticInfo: staticMap[agent.uuid])
+                            DashboardAgentCardView(summary: agent, staticInfo: staticMap[agent.uuid], meta: nil)
                         }
                     }
                     .padding(.horizontal, 20)
